@@ -5,6 +5,7 @@
 #include <FontCacheManager.h>
 #include <FsHelpers.h>
 #include <GfxRenderer.h>
+#include <HalDisplay.h>
 #include <HalFrontlight.h>
 #include <HalStorage.h>
 #include <I18n.h>
@@ -27,6 +28,7 @@
 #include "EpubReaderFootnotesActivity.h"
 #include "EpubReaderPercentSelectionActivity.h"
 #include "EpubReaderUtils.h"
+#include "KOReaderAutoSync.h"
 #include "KOReaderCredentialStore.h"
 #include "KOReaderSyncActivity.h"
 #include "MappedInputManager.h"
@@ -38,6 +40,7 @@
 #include "ReaderUtils.h"
 #include "RecentBooksStore.h"
 #include "SdCardFontSystem.h"
+#include "WifiCredentialStore.h"
 #include "activities/settings/TextSettingsActivity.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
@@ -167,6 +170,172 @@ EpubReaderActivity::~EpubReaderActivity() {
   } else {
     epub.reset();
   }
+}
+
+void EpubReaderActivity::onEnter() {
+  ReaderActivity::onEnter();
+  if (!epub) return;  // Load failed; ReaderActivity::onEnter() already called finish().
+
+  // Automatic KOReader-sync push, hook 1 of 4 (see also attemptCloseAutoSync()
+  // below and the sleep/screen-timeout hook in ActivityManager::goToSleep):
+  // schedule a silent push a few seconds after opening, so a quick open-and-
+  // back-out doesn't cost a network round trip.
+  openAutoSyncPending = true;
+  openAutoSyncAttempted = false;
+  openAutoSyncFireAtMs = millis() + OPEN_AUTO_SYNC_DELAY_MS;
+}
+
+void EpubReaderActivity::onGoHome(HomeMenuItem item) {
+  // Hook 2 of 4 (book close): runs here -- before onGoHome hands off to
+  // ActivityManager::goHome()/replaceActivity(), i.e. before the RenderLock
+  // that would later wrap onExit() is ever taken. epub/section are still
+  // fully valid at this point (they're torn down later, in the destructor).
+  attemptCloseAutoSync();
+  Activity::onGoHome(item);
+}
+
+void EpubReaderActivity::showAutoSyncPopup(const char* message) {
+  RenderLock lock;
+  GUI.drawPopup(renderer, message);
+  renderer.displayBuffer(HalDisplay::FAST_REFRESH);
+}
+
+void EpubReaderActivity::showAutoSyncToast(const char* message) {
+  {
+    RenderLock lock;
+    GUI.drawPopup(renderer, message);
+    renderer.displayBuffer(HalDisplay::FAST_REFRESH);
+  }
+  delay(1100);
+}
+
+namespace {
+// WifiCredentialStore is never loaded at boot (see main.cpp) -- only
+// WifiSelectionActivity::onEnter() calls loadFromFile() on it, so a freshly
+// booted device (which includes every wake from deep sleep -- that's a full
+// reboot, not a resume) starts with an empty, unloaded store here. Without
+// this call, every auto-sync attempt after a fresh boot would silently see
+// no saved networks and skip, until the user happened to open Wi-Fi settings
+// for something else first. Reloading here each time is a small SD read and
+// keeps this hook correct regardless of what else has run this session.
+//
+// Returns every saved network (not just the last-connected one) so
+// KOReaderAutoSync can scan and try whichever ones are actually in range --
+// the same reasoning WifiSelectionActivity's auto-connect uses, and the
+// reason it succeeds far more often than a single blind guess would.
+std::vector<KOReaderAutoSync::SavedNetwork> resolveSavedWifiNetworks(std::string& preferredSsid) {
+  WIFI_STORE.loadFromFile();
+  preferredSsid = WIFI_STORE.getLastConnectedSsid();
+  std::vector<KOReaderAutoSync::SavedNetwork> networks;
+  const size_t count = WIFI_STORE.getCredentialCount();
+  networks.reserve(count);
+  for (size_t i = 0; i < count; i++) {
+    if (const auto cred = WIFI_STORE.getCredentialAt(i)) {
+      networks.push_back({cred->ssid, cred->password});
+    }
+  }
+  return networks;
+}
+
+// KOReaderAutoSync (lib/) deliberately has no I18n.h dependency of its own
+// -- see the enum's own comment -- so the caller resolves each step to
+// actual text here, the same "src/ handles anything fragile to give a
+// lib" pattern already used for RenderLock/WifiCredentialStore/GUI.
+const char* autoSyncMessageText(KOReaderAutoSync::Message msg) {
+  switch (msg) {
+    case KOReaderAutoSync::Message::Syncing:
+      return tr(STR_KOSYNC_AUTO_SYNCING);
+    case KOReaderAutoSync::Message::Connecting:
+      return tr(STR_KOSYNC_AUTO_CONNECTING);
+    case KOReaderAutoSync::Message::Checking:
+      return tr(STR_KOSYNC_AUTO_CHECKING);
+    case KOReaderAutoSync::Message::Repositioning:
+      return tr(STR_KOSYNC_AUTO_REPOSITIONING);
+    case KOReaderAutoSync::Message::Uploading:
+      return tr(STR_KOSYNC_AUTO_UPLOADING);
+    case KOReaderAutoSync::Message::Success:
+      return tr(STR_KOSYNC_AUTO_SUCCESS);
+    case KOReaderAutoSync::Message::Failed:
+      return tr(STR_KOSYNC_AUTO_FAILED);
+  }
+  return "";
+}
+}  // namespace
+
+void EpubReaderActivity::attemptOpenAutoSync() {
+  openAutoSyncAttempted = true;
+  if (!epub) return;
+
+  const int currentPageNow = section ? section->currentPage : nextPageNumber;
+  const int totalPagesNow = section ? section->estimatedTotalPages() : cachedChapterTotalPageCount;
+  std::optional<uint16_t> paragraphIndex;
+  if (section && currentPageNow >= 0 && currentPageNow < section->pageCount) {
+    const uint16_t paragraphPage =
+        currentPageNow > 0 ? static_cast<uint16_t>(currentPageNow - 1) : static_cast<uint16_t>(currentPageNow);
+    if (const auto pIdx = section->getParagraphIndexForPage(paragraphPage)) {
+      paragraphIndex = *pIdx;
+    }
+  }
+
+  std::string preferredSsid;
+  const auto networks = resolveSavedWifiNetworks(preferredSsid);
+
+  // No "please wait" popup here -- reading continues underneath, unless the
+  // remote turns out to be further along, in which case the "Newer progress
+  // found..." message and the reload that follows are the visible feedback.
+  // checkRemoteFirst=true: this is the only hook where repositioning to a
+  // remote position actually means something (there's a reader on screen
+  // to jump).
+  const auto pushResult =
+      KOReaderAutoSync::push(epub, currentSpineIndex, currentPageNow, totalPagesNow, paragraphIndex, networks,
+                             preferredSsid, renderer, /*checkRemoteFirst=*/true, /*onWaitMessage=*/{},
+                             [this](KOReaderAutoSync::Message msg) { showAutoSyncToast(autoSyncMessageText(msg)); });
+
+  if (pushResult.shouldApplyRemote) {
+    // Mirrors KOReaderSyncActivity::saveProgressAndReturn() exactly: write
+    // the remote position to the saved-progress file, then reopen the same
+    // book so it resumes from there. Safe to do here (not mid-render):
+    // epub/section are still the live objects, and goToReader() defers its
+    // actual activity swap to the next loop() tick, same as everywhere else.
+    const std::optional<uint32_t> offset =
+        pushResult.hasVisibleTextOffset ? std::optional<uint32_t>(pushResult.visibleTextOffset) : std::nullopt;
+    EpubReaderUtils::saveProgress(*epub, pushResult.remoteSpineIndex, pushResult.remotePageNumber, 0, offset);
+    activityManager.goToReader(bookPath);
+    return;
+  }
+  requestUpdate();  // repaint the page cleanly over any toast that was drawn
+}
+
+void EpubReaderActivity::attemptCloseAutoSync() {
+  if (!epub) return;
+
+  const int currentPageNow = section ? section->currentPage : nextPageNumber;
+  const int totalPagesNow = section ? section->estimatedTotalPages() : cachedChapterTotalPageCount;
+  std::optional<uint16_t> paragraphIndex;
+  if (section && currentPageNow >= 0 && currentPageNow < section->pageCount) {
+    const uint16_t paragraphPage =
+        currentPageNow > 0 ? static_cast<uint16_t>(currentPageNow - 1) : static_cast<uint16_t>(currentPageNow);
+    if (const auto pIdx = section->getParagraphIndexForPage(paragraphPage)) {
+      paragraphIndex = *pIdx;
+    }
+  }
+
+  std::string preferredSsid;
+  const auto networks = resolveSavedWifiNetworks(preferredSsid);
+
+  // checkRemoteFirst=false: there's nothing on screen to reposition when
+  // you're already on the way out, so this always just pushes.
+  KOReaderAutoSync::push(epub, currentSpineIndex, currentPageNow, totalPagesNow, paragraphIndex, networks,
+                        preferredSsid, renderer, /*checkRemoteFirst=*/false,
+                        [this](KOReaderAutoSync::Message msg) { showAutoSyncPopup(autoSyncMessageText(msg)); },
+                        [this](KOReaderAutoSync::Message msg) { showAutoSyncToast(autoSyncMessageText(msg)); });
+}
+
+void EpubReaderActivity::attemptAutoSyncBeforeSleep() {
+  // Hooks 3 & 4 of 4 (manual sleep and auto-sleep-from-timeout land here via
+  // ActivityManager::goToSleep -- same "please wait" + toast treatment as
+  // the close hook, since the CPU has to stay up for it either way).
+  attemptCloseAutoSync();
 }
 
 bool EpubReaderActivity::loadBook() {
@@ -317,6 +486,15 @@ void EpubReaderActivity::openDictionaryWordSelect() {
 void EpubReaderActivity::loop() {
   if (!epub) {
     finish();
+    return;
+  }
+
+  // Hook 1 of 4 (open): fire the delayed silent sync once the settle window
+  // has elapsed. Skipped while a render is in flight so it never contends
+  // with the renderer mid-frame; it'll simply fire on the next idle tick.
+  if (openAutoSyncPending && millis() >= openAutoSyncFireAtMs && !RenderLock::peek()) {
+    openAutoSyncPending = false;
+    attemptOpenAutoSync();
     return;
   }
 

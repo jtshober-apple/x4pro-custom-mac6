@@ -53,6 +53,20 @@ class EpubReaderActivity final : public ReaderActivity {
   unsigned long bookmarkMessageTime = 0UL;
   bool pendingReadFolderMove = false;
 
+  // Automatic KOReader-sync push on book open: fires once, after a short
+  // settle delay so a quick open-then-back-out doesn't trigger a network
+  // round trip. See attemptOpenAutoSync()/attemptCloseAutoSync().
+  static constexpr unsigned long OPEN_AUTO_SYNC_DELAY_MS = 5000UL;
+  bool openAutoSyncPending = false;
+  bool openAutoSyncAttempted = false;
+  unsigned long openAutoSyncFireAtMs = 0UL;
+  void attemptOpenAutoSync();
+  void attemptCloseAutoSync();
+  // Shown by the KOReaderAutoSync callbacks -- these live here (not in the
+  // lib) because RenderLock and the theme system are src/-only.
+  void showAutoSyncPopup(const char* message);  // draw + display, no delay (caller blocks on the sync itself next)
+  void showAutoSyncToast(const char* message);  // draw + display + brief delay, for the result message
+
   // Toolbar reader menu (SETTINGS.readerMenuStyle == READER_MENU_TOOLBAR): drawn
   // over the page instead of pushing the full-screen list menu. Select opens the
   // Toolbar; its tools open the Contents/Text/More bottom-sheet panels.
@@ -184,7 +198,16 @@ class EpubReaderActivity final : public ReaderActivity {
       : ReaderActivity("EpubReader", renderer, mappedInput, std::move(bookPath), allowFastInitialRefresh) {}
   ~EpubReaderActivity() override;
 
+  void onEnter() override;
   void loop() override;
+  // Not a plain ReaderActivity/onExit override: onExit() runs nested inside
+  // a RenderLock the caller (ActivityManager::exitActivity) already holds,
+  // and the close-hook's "please wait" popup needs its own RenderLock --
+  // RenderLock isn't reentrant, so doing this from onExit() deadlocks the
+  // device. onGoHome() is the shared "leave the reader" choke point (Back,
+  // the reader menu's Go Home, end-of-book Go Home) and runs *before* any
+  // RenderLock is taken, same as the sleep hook below.
+  void onGoHome(HomeMenuItem item = HomeMenuItem::NONE) override;
 
   bool pageTurn(bool isForward) override;
   bool skipPages(int amount) override;
@@ -192,6 +215,7 @@ class EpubReaderActivity final : public ReaderActivity {
   void onReturnFromEndOfBook() override;
 
   bool skipLoopDelay() override;
+  void attemptAutoSyncBeforeSleep() override;
 
   ScreenshotInfo getScreenshotInfo() const override;
   CrossPointPosition getCurrentPosition() const;

@@ -47,6 +47,12 @@ class Activity {
   // transitions so no filesystem code races a raw SD-card owner.
   virtual bool requiresExclusiveStorageLoop() const { return false; }
   virtual bool isReaderActivity() const { return false; }
+  // Automatic KOReader-sync hook (3rd/4th of 4, alongside book open/close):
+  // called by ActivityManager::goToSleep() right before the device sleeps,
+  // for both a manual sleep and an auto-sleep-from-timeout. Default no-op;
+  // only EpubReaderActivity overrides it, and only when a book with KoSync
+  // credentials configured is actually open.
+  virtual void attemptAutoSyncBeforeSleep() {}
   // Returns true when the activity schedules its own forced refresh.
   virtual bool handleForcedRefresh() { return false; }
   virtual bool isHomeActivity() const { return false; }
@@ -65,6 +71,6 @@ class Activity {
 
   // Convenience method to facilitate API transition to ActivityManager
   // TODO: remove this in near future
-  void onGoHome(HomeMenuItem item = HomeMenuItem::NONE);
+  virtual void onGoHome(HomeMenuItem item = HomeMenuItem::NONE);
   void onSelectBook(const std::string& path);
 };
