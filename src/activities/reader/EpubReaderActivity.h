@@ -59,6 +59,11 @@ class EpubReaderActivity final : public ReaderActivity {
   static constexpr unsigned long OPEN_AUTO_SYNC_DELAY_MS = 5000UL;
   bool openAutoSyncPending = false;
   bool openAutoSyncAttempted = false;
+  // True once this session's open-time check has confirmed the server's
+  // position (in sync, repositioned, or local pushed ahead). Until then the
+  // close/sleep push must check the server first so a stale local position
+  // can never overwrite newer progress made elsewhere (e.g. on the phone).
+  bool openAutoSyncOk = false;
   unsigned long openAutoSyncFireAtMs = 0UL;
   void attemptOpenAutoSync();
   void attemptCloseAutoSync();

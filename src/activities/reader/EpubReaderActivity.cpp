@@ -182,6 +182,7 @@ void EpubReaderActivity::onEnter() {
   // back-out doesn't cost a network round trip.
   openAutoSyncPending = true;
   openAutoSyncAttempted = false;
+  openAutoSyncOk = false;
   openAutoSyncFireAtMs = millis() + OPEN_AUTO_SYNC_DELAY_MS;
 }
 
@@ -291,6 +292,10 @@ void EpubReaderActivity::attemptOpenAutoSync() {
                              preferredSsid, renderer, /*checkRemoteFirst=*/true, /*onWaitMessage=*/{},
                              [this](KOReaderAutoSync::Message msg) { showAutoSyncToast(autoSyncMessageText(msg)); });
 
+  // Any Success here means the server's position was actually checked and
+  // reconciled (already in sync, remote applied below, or local pushed).
+  openAutoSyncOk = (pushResult.result == KOReaderAutoSync::Result::Success);
+
   if (pushResult.shouldApplyRemote) {
     // Mirrors KOReaderSyncActivity::saveProgressAndReturn() exactly: write
     // the remote position to the saved-progress file, then reopen the same
@@ -323,11 +328,22 @@ void EpubReaderActivity::attemptCloseAutoSync() {
   std::string preferredSsid;
   const auto networks = resolveSavedWifiNetworks(preferredSsid);
 
-  // checkRemoteFirst=false: there's nothing on screen to reposition when
-  // you're already on the way out, so this always just pushes.
+  // Once this session's open check has succeeded, the server's position is
+  // known to be reconciled, so this just pushes (no extra round trip). If it
+  // hasn't (backed out / went to sleep within the open delay, or the open
+  // check failed), fetch the server position first: when the server is
+  // AHEAD (e.g. you listened on your phone), the lib skips the push instead
+  // of overwriting that newer progress with this stale position. There is
+  // nothing on screen to reposition on the way out, so the "remote is ahead"
+  // result is deliberately ignored here -- the next open will pick it up.
   KOReaderAutoSync::push(epub, currentSpineIndex, currentPageNow, totalPagesNow, paragraphIndex, networks,
-                        preferredSsid, renderer, /*checkRemoteFirst=*/false,
-                        [this](KOReaderAutoSync::Message msg) { showAutoSyncPopup(autoSyncMessageText(msg)); },
+                        preferredSsid, renderer, /*checkRemoteFirst=*/!openAutoSyncOk,
+                        [this](KOReaderAutoSync::Message msg) {
+                          // "Newer progress found, updating..." would be wrong here: nothing
+                          // is being updated, the push is just being withheld.
+                          if (msg == KOReaderAutoSync::Message::Repositioning) return;
+                          showAutoSyncPopup(autoSyncMessageText(msg));
+                        },
                         [this](KOReaderAutoSync::Message msg) { showAutoSyncToast(autoSyncMessageText(msg)); });
 }
 
