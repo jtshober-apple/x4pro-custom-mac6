@@ -28,6 +28,7 @@
 #include "fontIds.h"
 #include "images/Logo120.h"
 #include "images/MoonIcon.h"
+#include "util/KoSyncStatus.h"
 
 namespace {
 
@@ -485,6 +486,27 @@ void releaseSdFontCachesForDecode(const GfxRenderer& renderer) {
   }
 }
 
+// "Last KOSync attempt failed" mark, pinned to the top-right corner of the
+// sleep screen (white box so it reads over any cover or custom image). The
+// sleep-time sync has already finished by the time a sleep screen is drawn, so
+// this reflects its result.
+constexpr int SYNC_MARK_SIZE = 44;
+constexpr int SYNC_MARK_INSET = 16;
+
+void drawSyncMarkIfNeeded(const GfxRenderer& renderer) {
+  if (!KoSyncStatus::isUnsynced()) return;
+  KoSyncStatus::drawMark(renderer, renderer.getScreenWidth() - SYNC_MARK_INSET - SYNC_MARK_SIZE, SYNC_MARK_INSET,
+                         SYNC_MARK_SIZE, /*whiteBackground=*/true);
+}
+
+// Call after drawing the image in each grayscale pass, so the mark's box stays
+// pure black/white instead of picking up the image's gray tones.
+void clearSyncMarkForGrayscale(const GfxRenderer& renderer) {
+  if (!KoSyncStatus::isUnsynced()) return;
+  KoSyncStatus::clearGrayscaleRegion(renderer, renderer.getScreenWidth() - SYNC_MARK_INSET - SYNC_MARK_SIZE,
+                                     SYNC_MARK_INSET, SYNC_MARK_SIZE);
+}
+
 }  // namespace
 
 void SleepActivity::onEnter() {
@@ -606,6 +628,7 @@ void SleepActivity::renderDefaultSleepScreen() const {
     renderer.invertScreen();
   }
 
+  drawSyncMarkIfNeeded(renderer);
   renderer.displayBuffer(HalDisplay::HALF_REFRESH);
 }
 
@@ -633,6 +656,9 @@ void SleepActivity::renderBitmapSleepScreen(const Bitmap& bitmap, const bool pre
     renderer.invertScreen();
   }
 
+  // Drawn after the optional invert so the mark is never inverted with the image.
+  drawSyncMarkIfNeeded(renderer);
+
   if (hasGreyscale) {
     // OEM grayscale pipeline base. Must stay HALF: the gray nudge LUT is
     // calibrated against the pixel state the single-pass HALF waveform leaves
@@ -648,12 +674,14 @@ void SleepActivity::renderBitmapSleepScreen(const Bitmap& bitmap, const bool pre
     renderer.clearScreen(0x00);
     renderer.setRenderMode(GfxRenderer::GRAYSCALE_LSB);
     renderer.drawBitmap(bitmap, x, y, pageWidth, pageHeight, cropX, cropY);
+    clearSyncMarkForGrayscale(renderer);
     renderer.copyGrayscaleLsbBuffers();
 
     bitmap.rewindToData();
     renderer.clearScreen(0x00);
     renderer.setRenderMode(GfxRenderer::GRAYSCALE_MSB);
     renderer.drawBitmap(bitmap, x, y, pageWidth, pageHeight, cropX, cropY);
+    clearSyncMarkForGrayscale(renderer);
     renderer.copyGrayscaleMsbBuffers();
 
     renderer.displayGrayBuffer();
@@ -840,5 +868,6 @@ void SleepActivity::renderLastScreenSleepScreen() const {
 
 void SleepActivity::renderBlankSleepScreen() const {
   renderer.clearScreen();
+  drawSyncMarkIfNeeded(renderer);
   renderer.displayBuffer(HalDisplay::HALF_REFRESH);
 }

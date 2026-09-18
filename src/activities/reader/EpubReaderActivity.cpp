@@ -46,6 +46,7 @@
 #include "fontIds.h"
 #include "util/BookmarkUtil.h"
 #include "util/ButtonNavigator.h"
+#include "util/KoSyncStatus.h"
 #include "util/ScreenshotUtil.h"
 
 namespace {
@@ -261,6 +262,28 @@ const char* autoSyncMessageText(KOReaderAutoSync::Message msg) {
   }
   return "";
 }
+
+// Bookkeeping for the "last sync attempt failed" X (see util/KoSyncStatus.h).
+// An attempt is recorded as unsynced BEFORE it starts and only cleared when it
+// succeeds, so a failure, a watchdog reset or power loss mid-sync all leave the
+// X up. Returns whether an attempt was recorded (false when KOSync isn't set
+// up, in which case there is nothing to sync and the X is cleared).
+bool beginSyncStatusAttempt() {
+  if (!KOREADER_STORE.hasCredentials()) {
+    KoSyncStatus::markSynced();
+    return false;
+  }
+  KoSyncStatus::markAttemptStarted();
+  return true;
+}
+
+// "Success" includes "server is already ahead, push withheld on purpose" --
+// nothing of yours is missing from the server in that case, so no X.
+void endSyncStatusAttempt(const bool began, const KOReaderAutoSync::Result result) {
+  if (began && result == KOReaderAutoSync::Result::Success) {
+    KoSyncStatus::markSynced();
+  }
+}
 }  // namespace
 
 void EpubReaderActivity::attemptOpenAutoSync() {
@@ -287,10 +310,12 @@ void EpubReaderActivity::attemptOpenAutoSync() {
   // checkRemoteFirst=true: this is the only hook where repositioning to a
   // remote position actually means something (there's a reader on screen
   // to jump).
+  const bool statusTracked = beginSyncStatusAttempt();
   const auto pushResult =
       KOReaderAutoSync::push(epub, currentSpineIndex, currentPageNow, totalPagesNow, paragraphIndex, networks,
                              preferredSsid, renderer, /*checkRemoteFirst=*/true, /*onWaitMessage=*/{},
                              [this](KOReaderAutoSync::Message msg) { showAutoSyncToast(autoSyncMessageText(msg)); });
+  endSyncStatusAttempt(statusTracked, pushResult.result);
 
   // Any Success here means the server's position was actually checked and
   // reconciled (already in sync, remote applied below, or local pushed).
@@ -336,15 +361,18 @@ void EpubReaderActivity::attemptCloseAutoSync() {
   // of overwriting that newer progress with this stale position. There is
   // nothing on screen to reposition on the way out, so the "remote is ahead"
   // result is deliberately ignored here -- the next open will pick it up.
-  KOReaderAutoSync::push(epub, currentSpineIndex, currentPageNow, totalPagesNow, paragraphIndex, networks,
-                        preferredSsid, renderer, /*checkRemoteFirst=*/!openAutoSyncOk,
-                        [this](KOReaderAutoSync::Message msg) {
-                          // "Newer progress found, updating..." would be wrong here: nothing
-                          // is being updated, the push is just being withheld.
-                          if (msg == KOReaderAutoSync::Message::Repositioning) return;
-                          showAutoSyncPopup(autoSyncMessageText(msg));
-                        },
-                        [this](KOReaderAutoSync::Message msg) { showAutoSyncToast(autoSyncMessageText(msg)); });
+  const bool statusTracked = beginSyncStatusAttempt();
+  const auto pushResult = KOReaderAutoSync::push(
+      epub, currentSpineIndex, currentPageNow, totalPagesNow, paragraphIndex, networks, preferredSsid, renderer,
+      /*checkRemoteFirst=*/!openAutoSyncOk,
+      [this](KOReaderAutoSync::Message msg) {
+        // "Newer progress found, updating..." would be wrong here: nothing
+        // is being updated, the push is just being withheld.
+        if (msg == KOReaderAutoSync::Message::Repositioning) return;
+        showAutoSyncPopup(autoSyncMessageText(msg));
+      },
+      [this](KOReaderAutoSync::Message msg) { showAutoSyncToast(autoSyncMessageText(msg)); });
+  endSyncStatusAttempt(statusTracked, pushResult.result);
 }
 
 void EpubReaderActivity::attemptAutoSyncBeforeSleep() {

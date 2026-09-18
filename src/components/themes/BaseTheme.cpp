@@ -20,6 +20,7 @@
 #include "components/UiAppHelpers.h"
 #include "components/icons/bookmark.h"
 #include "fontIds.h"
+#include "util/KoSyncStatus.h"
 
 // Internal constants
 namespace {
@@ -313,6 +314,11 @@ void BaseTheme::drawHeader(const GfxRenderer& renderer, Rect rect, const char* t
   props.rightLabel = subtitle;  // firmware headers right-align the secondary text
   const bool batteryLeft = metrics.headerBatterySide == 1;
   const bool batteryDetached = metrics.headerBatteryDetached;
+  // "Last KOSync attempt failed" mark: drawn in the battery strip, beside the
+  // battery icon, on every screen that uses a themed header.
+  const bool showSyncMark = KoSyncStatus::isUnsynced();
+  constexpr int syncMarkSize = 20;
+  constexpr int syncMarkGap = 8;
   // Shared-line headers with the battery on the right: the header component
   // places rightLabel inside the battery reserve, so it sits mid-band next to
   // the icon and shifts with the percent label's width. Draw it manually below
@@ -339,7 +345,9 @@ void BaseTheme::drawHeader(const GfxRenderer& renderer, Rect rect, const char* t
     const int titleTop = static_cast<int>(band.height) - tokens.headerUnderline - tokens.spaceMd - titleLineHeight;
     props.titleOffsetY = static_cast<int16_t>(titleTop - (static_cast<int>(band.height) - titleLineHeight) / 2);
   } else {
-    const int16_t reserve = static_cast<int16_t>(batteryReserve + tokens.spaceMd);
+    // Shared-line headers: keep the title clear of the sync mark too.
+    const int16_t reserve =
+        static_cast<int16_t>(batteryReserve + tokens.spaceMd + (showSyncMark ? syncMarkSize + syncMarkGap : 0));
     if (batteryLeft) {
       props.leftReserve = reserve;
     } else {
@@ -372,6 +380,12 @@ void BaseTheme::drawHeader(const GfxRenderer& renderer, Rect rect, const char* t
                                        : static_cast<int16_t>(band.right() - batteryEdgeInset - batteryReserve);
   const int16_t batteryH = static_cast<int16_t>(metrics.batteryBarHeight);
   fui::batteryIndicator(ui.frame, fui::Rect{batteryX, band.y, batteryReserve, batteryH}, battery);
+
+  if (showSyncMark) {
+    const int markX = batteryLeft ? batteryX + batteryReserve + syncMarkGap : batteryX - syncMarkGap - syncMarkSize;
+    const int markY = band.y + std::max(0, (batteryH - syncMarkSize) / 2);
+    KoSyncStatus::drawMark(renderer, markX, markY, syncMarkSize);
+  }
 
   if (manualRightLabel) {
     const fui::Size labelSize = ui.target.measureText(fui::GfxRendererTarget::FONT_SMALL, subtitle, tokens.smallText);
@@ -735,9 +749,21 @@ void BaseTheme::drawStatusBar(GfxRenderer& renderer, const float bookProgress, c
   auto textY = screenHeight - UITheme::getInstance().getStatusBarHeight() - orientedMarginBottom - paddingBottom - 4;
 
   const int leftClusterX = metrics.statusBarHorizontalMargin + orientedMarginLeft + 1;
-  const int rightClusterX = renderer.getScreenWidth() - metrics.statusBarHorizontalMargin - orientedMarginRight;
+  // "Last KOSync attempt failed" mark: pinned to the right edge of the status
+  // line; everything else in the right cluster (progress text, clock) shifts
+  // left to make room for it.
+  const bool showSyncMark = KoSyncStatus::isUnsynced();
+  const int syncMarkSize = std::max(16, renderer.getLineHeight(SMALL_FONT_ID));
+  constexpr int syncMarkGap = 8;
+  const int syncMarkReserve = showSyncMark ? syncMarkSize + syncMarkGap : 0;
+  const int rightClusterX =
+      renderer.getScreenWidth() - metrics.statusBarHorizontalMargin - orientedMarginRight - syncMarkReserve;
   int leftClusterWidth = 0;
   int rightClusterWidth = 0;
+  if (showSyncMark) {
+    const int syncMarkY = textY + (renderer.getLineHeight(SMALL_FONT_ID) - syncMarkSize) / 2;
+    KoSyncStatus::drawMark(renderer, rightClusterX + syncMarkGap, syncMarkY, syncMarkSize);
+  }
 
   if (sb.showBookProgressPercent || sb.showChapterPageCount) {
     // Right aligned text for progress counter
@@ -842,7 +868,7 @@ void BaseTheme::drawStatusBar(GfxRenderer& renderer, const float bookProgress, c
         renderer.getScreenWidth() - (metrics.statusBarHorizontalMargin * 2) - orientedMarginLeft - orientedMarginRight;
 
     const int titleMarginLeft = leftClusterWidth + 30;
-    const int titleMarginRight = rightClusterWidth + 30;
+    const int titleMarginRight = rightClusterWidth + syncMarkReserve + 30;
 
     // Attempt to center title on the screen, but if title is too wide then later we will center it within the
     // available space.

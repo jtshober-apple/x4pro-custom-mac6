@@ -23,6 +23,7 @@
 #include "components/UITheme.h"
 #include "components/UiAppHelpers.h"  // list icons for the compare rows
 #include "fontIds.h"
+#include "util/KoSyncStatus.h"
 
 namespace fui = freeink::ui;
 
@@ -95,6 +96,7 @@ void KOReaderSyncActivity::saveProgressAndReturn(int spineIndex, int page) {
     requestUpdate(true);
     return;
   }
+  KoSyncStatus::markSynced();  // local now matches the server
   returnToReader();
 }
 
@@ -107,6 +109,7 @@ bool KOReaderSyncActivity::smartSyncEnabled() const {
 void KOReaderSyncActivity::markAutoReturn() { autoReturnAt = millis() + AUTO_RETURN_DELAY_MS; }
 
 void KOReaderSyncActivity::completeAlreadySynced() {
+  KoSyncStatus::markSynced();
   {
     RenderLock lock(*this);
     state = SYNC_COMPLETE;
@@ -118,11 +121,13 @@ void KOReaderSyncActivity::completeAlreadySynced() {
 void KOReaderSyncActivity::onWifiSelectionComplete(const bool success) {
   if (!success) {
     LOG_DBG("KOSync", "WiFi connection failed, exiting");
+    KoSyncStatus::markAttemptStarted();  // a failed manual attempt leaves the sync-failed mark up
     returnToReader();
     return;
   }
 
   LOG_DBG("KOSync", "WiFi connected, starting sync");
+  KoSyncStatus::markAttemptStarted();  // cleared again by whichever path below succeeds
 
   // Keep the station fully awake for the short sync transaction. The web server
   // does the same because ESP32 modem sleep can introduce multi-second network
@@ -352,6 +357,7 @@ void KOReaderSyncActivity::performUpload() {
     return;
   }
 
+  KoSyncStatus::markSynced();
   {
     RenderLock lock(*this);
     state = UPLOAD_COMPLETE;

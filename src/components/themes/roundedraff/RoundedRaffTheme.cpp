@@ -13,6 +13,7 @@
 #include "components/UITheme.h"
 #include "components/icons/cover.h"
 #include "fontIds.h"
+#include "util/KoSyncStatus.h"
 
 namespace {
 constexpr int kCoverRadius = 18;
@@ -50,6 +51,12 @@ void RoundedRaffTheme::drawHeader(const GfxRenderer& renderer, Rect rect, const 
                                   const char* subtitle) const {
   // Home screen header is custom-rendered in drawRecentBookCover.
   if (title == nullptr) {
+    // No battery/title band to hang the "last KOSync attempt failed" mark on
+    // here, so pin it to the band's top-right corner.
+    if (KoSyncStatus::isUnsynced()) {
+      constexpr int syncMarkSize = 20;
+      KoSyncStatus::drawMark(renderer, rect.x + rect.width - 12 - syncMarkSize, rect.y + 2, syncMarkSize);
+    }
     return;
   }
   BaseTheme::drawHeader(renderer, rect, title, subtitle);
