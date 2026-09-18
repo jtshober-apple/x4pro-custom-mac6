@@ -14,6 +14,7 @@
 #include <esp_system.h>
 
 #include <algorithm>
+#include <cstring>
 #include <functional>
 #include <iterator>
 #include <limits>
@@ -50,6 +51,14 @@
 #include "util/ScreenshotUtil.h"
 
 namespace {
+// Set by attemptOpenAutoSync() right before it reopens the book at the
+// server's own position. The reopened reader would otherwise run a second,
+// redundant open-time sync (a full Wi-Fi scan + connect while the main loop is
+// blocked and the buttons are dead) just to re-confirm the position it was
+// handed a moment ago. Keyed by book path and cleared by the very next reader
+// entry, so it can never leak onto a different book.
+std::string skipOpenSyncBookPath;
+
 // The X4 Pro and X4 Classic carry the X4's panel but sit outside isXteinkDevice()
 // (that helper also gates power management). Overlay refresh choices are per-panel:
 // this family runs the grayscale anti-aliasing pass, so chrome painted over a
@@ -175,12 +184,23 @@ EpubReaderActivity::~EpubReaderActivity() {
 
 void EpubReaderActivity::onEnter() {
   ReaderActivity::onEnter();
+  // Consume the one-shot marker on every entry (see skipOpenSyncBookPath).
+  const bool skipOpenSync = !skipOpenSyncBookPath.empty() && skipOpenSyncBookPath == bookPath;
+  skipOpenSyncBookPath.clear();
   if (!epub) return;  // Load failed; ReaderActivity::onEnter() already called finish().
 
   // Automatic KOReader-sync push, hook 1 of 4 (see also attemptCloseAutoSync()
   // below and the sleep/screen-timeout hook in ActivityManager::goToSleep):
   // schedule a silent push a few seconds after opening, so a quick open-and-
   // back-out doesn't cost a network round trip.
+  if (skipOpenSync) {
+    // Just reopened at the server's own position: already reconciled, so no
+    // second sync. Later close/sleep pushes can go straight out.
+    openAutoSyncPending = false;
+    openAutoSyncAttempted = true;
+    openAutoSyncOk = true;
+    return;
+  }
   openAutoSyncPending = true;
   openAutoSyncAttempted = false;
   openAutoSyncOk = false;
@@ -208,7 +228,9 @@ void EpubReaderActivity::showAutoSyncToast(const char* message) {
     GUI.drawPopup(renderer, message);
     renderer.displayBuffer(HalDisplay::FAST_REFRESH);
   }
-  delay(1100);
+  // A success confirmation only needs a glance; a failure has to stay readable.
+  const bool isSuccess = strcmp(message, tr(STR_KOSYNC_AUTO_SUCCESS)) == 0;
+  delay(isSuccess ? 600 : 1100);
 }
 
 namespace {
@@ -330,6 +352,7 @@ void EpubReaderActivity::attemptOpenAutoSync() {
     const std::optional<uint32_t> offset =
         pushResult.hasVisibleTextOffset ? std::optional<uint32_t>(pushResult.visibleTextOffset) : std::nullopt;
     EpubReaderUtils::saveProgress(*epub, pushResult.remoteSpineIndex, pushResult.remotePageNumber, 0, offset);
+    skipOpenSyncBookPath = bookPath;  // the reopened reader must not sync again
     activityManager.goToReader(bookPath);
     return;
   }
