@@ -10,6 +10,7 @@
 #include <algorithm>
 
 #include "CrossPointSettings.h"
+#include "KOReaderCredentialStore.h"
 #include "OpdsServerStore.h"
 #include "boot_sleep/BootActivity.h"
 #include "boot_sleep/SleepActivity.h"
@@ -94,6 +95,9 @@ void ActivityManager::loop() {
       if (currentActivity->handleHomeGesture()) {
         return;
       }
+      // The Home gesture bypasses EpubReaderActivity::onGoHome(), so fire the
+      // close hook here too.
+      runEpubReaderAutoSync();
       goHome();
       return;
     }
@@ -203,6 +207,35 @@ void ActivityManager::loop() {
   }
 }
 
+// Automatic KOReader-sync: lets the open EPUB reader push its reading position
+// right before the device leaves it. Used by every exit that does NOT already
+// go through EpubReaderActivity::onGoHome() (which fires the close hook
+// itself): sleep, auto-sleep from timeout, the touch Home gesture, and
+// Back -> File Browser.
+//
+// The reader is either the current activity or, when one of its sub-screens
+// (menu, chapter list, ...) is on top, the one underneath it on the stack.
+// Must be called from the main loop with no RenderLock held (the reader's
+// hook draws its own popups and takes the lock itself).
+//
+// Returns true if an EPUB reader was found and its hook ran.
+bool ActivityManager::runEpubReaderAutoSync() {
+  Activity* reader = nullptr;
+  if (currentActivity && currentActivity->name == "EpubReader") {
+    reader = currentActivity.get();
+  } else {
+    for (auto it = stackActivities.rbegin(); it != stackActivities.rend(); ++it) {
+      if (*it && (*it)->name == "EpubReader") {
+        reader = it->get();
+        break;
+      }
+    }
+  }
+  if (!reader) return false;
+  reader->attemptAutoSyncBeforeSleep();
+  return true;
+}
+
 void ActivityManager::exitActivity(const RenderLock& lock) {
   // Note: lock must be held by the caller
   if (currentActivity) {
@@ -245,6 +278,11 @@ void ActivityManager::goToUsbDrive() {
 void ActivityManager::goToSettings() { replaceActivity(std::make_unique<SettingsActivity>(renderer, mappedInput)); }
 
 void ActivityManager::goToFileBrowser(std::string path) {
+  // Back (long-press by default) exits the reader straight to the File
+  // Browser without going through EpubReaderActivity::onGoHome(), so the
+  // close hook has to fire here. From Home/other screens no EPUB reader is
+  // open, so this is a no-op there.
+  runEpubReaderAutoSync();
   replaceActivity(std::make_unique<FileBrowserActivity>(renderer, mappedInput, std::move(path)));
 }
 
@@ -285,6 +323,15 @@ void ActivityManager::goToReader(std::string path, const bool allowFastInitialRe
 }
 
 void ActivityManager::goToSleep(bool fromTimeout) {
+  // Automatic KOReader-sync, hooks 3 & 4 (manual sleep and auto-sleep from
+  // timeout both land here). The reader's popups/toasts are drawn straight
+  // onto the display buffer, and Quick Resume / Transparent sleep screens
+  // keep whatever is in that buffer as the frame shown while asleep, so
+  // repaint the real page afterwards or the last "Sync complete" popup would
+  // be baked into the sleep image.
+  if (runEpubReaderAutoSync() && KOREADER_STORE.hasCredentials()) {
+    requestUpdateAndWait();
+  }
   replaceActivity(std::make_unique<SleepActivity>(renderer, mappedInput, fromTimeout));
   loop();  // Important: sleep screen must be rendered immediately, the caller will go to sleep right after this returns
 }

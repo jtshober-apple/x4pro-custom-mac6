@@ -44,6 +44,10 @@ class ActivityManager {
 
   void exitActivity(const RenderLock& lock);
 
+  // Lets the open EPUB reader push its reading position (automatic KOReader-
+  // sync) before the device leaves it. Returns true if an EPUB reader was found.
+  bool runEpubReaderAutoSync();
+
   // Pending activity to be launched on next loop iteration
   std::unique_ptr<Activity> pendingActivity;
   enum class PendingAction { None, Push, Pop, Replace };
