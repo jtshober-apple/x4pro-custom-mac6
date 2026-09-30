@@ -19,13 +19,11 @@
 UITheme UITheme::instance;
 
 UITheme::UITheme() {
-  auto themeType = static_cast<CrossPointSettings::UI_THEME>(SETTINGS.uiTheme);
-  setTheme(themeType);
+  setTheme(CrossPointSettings::UI_THEME::SYSTEM6);
 }
 
 void UITheme::reload() {
-  auto themeType = static_cast<CrossPointSettings::UI_THEME>(SETTINGS.uiTheme);
-  setTheme(themeType);
+  setTheme(CrossPointSettings::UI_THEME::SYSTEM6);
 }
 
 void UITheme::setTheme(CrossPointSettings::UI_THEME type) {
