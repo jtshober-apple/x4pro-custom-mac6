@@ -382,7 +382,7 @@ void System6Theme::drawRecentBookCover(GfxRenderer& r, Rect rect, const std::vec
   if (!books.empty() && !books.front().coverBmpPath.empty()) {
     const std::string coverPath =
         UITheme::getCoverThumbPath(books.front().coverBmpPath, System6Metrics::values.homeCoverHeight);
-    File file;
+    HalFile file;
     if (Storage.openFileForRead("HOME", coverPath, file)) {
       Bitmap bitmap(file);
       if (bitmap.parseHeaders() == BmpReaderError::Ok && bitmap.getWidth() > 0 && bitmap.getHeight() > 0) {

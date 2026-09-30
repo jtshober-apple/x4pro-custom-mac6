@@ -19,7 +19,7 @@ const EpdFont largeFont(&system6_large);
 
 int resolveSystem6Font(int original, const char* text, EpdFontFamily::Style style) {
   (void)style;
-  if (SETTINGS.uiTheme != SYSTEM6) return original;
+  if (SETTINGS.uiTheme != CrossPointSettings::SYSTEM6) return original;
   const EpdFont* font = nullptr;
   int replacement = original;
   if (original == SMALL_FONT_ID) {
