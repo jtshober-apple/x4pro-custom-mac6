@@ -172,7 +172,6 @@ void System6Theme::drawHeaderWithRightReserve(const GfxRenderer& r, Rect rect, c
 
   char timeText[9] = {};
   const bool showClock =
-      SETTINGS.shouldShowClockOutsideReader() &&
       halClock.isAvailable() &&
       halClock.formatTime(timeText, sizeof(timeText), SETTINGS.clockUtcOffsetQ, SETTINGS.clockFormat == 1);
   int clockX = statusLeft;
@@ -383,7 +382,7 @@ void System6Theme::drawRecentBookCover(GfxRenderer& r, Rect rect, const std::vec
   if (!books.empty() && !books.front().coverBmpPath.empty()) {
     const std::string coverPath =
         UITheme::getCoverThumbPath(books.front().coverBmpPath, System6Metrics::values.homeCoverHeight);
-    FsFile file;
+    File file;
     if (Storage.openFileForRead("HOME", coverPath, file)) {
       Bitmap bitmap(file);
       if (bitmap.parseHeaders() == BmpReaderError::Ok && bitmap.getWidth() > 0 && bitmap.getHeight() > 0) {

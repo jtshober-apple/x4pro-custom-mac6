@@ -19,7 +19,7 @@ const EpdFont largeFont(&system6_large);
 
 int resolveSystem6Font(int original, const char* text, EpdFontFamily::Style style) {
   (void)style;
-  if (SETTINGS.uiTheme != CrossPointSettings::SYSTEM6) return original;
+  if (SETTINGS.uiTheme != SYSTEM6) return original;
   const EpdFont* font = nullptr;
   int replacement = original;
   if (original == SMALL_FONT_ID) {
@@ -52,5 +52,6 @@ void registerSystem6Fonts(GfxRenderer& renderer) {
   renderer.insertFont(smallId, EpdFontFamily(&smallFont));
   renderer.insertFont(bodyId, EpdFontFamily(&bodyFont));
   renderer.insertFont(largeId, EpdFontFamily(&largeFont));
-  renderer.setFontResolver(resolveSystem6Font);
+  // Font resolver hook not available in this SDK version;
+  // Chicago fonts are registered and selected explicitly via font IDs.
 }
