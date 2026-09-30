@@ -41,7 +41,7 @@ class ContextMenuActivity : public Activity {
     // Touch: row tap selects
     int row = -1;
     const auto touch = mappedInput.rowTouch(row, rowsTop, rowHeight + metrics.menuSpacing, count, 0, INT32_MAX, rowHeight);
-    if (touch == MappedInputManager::RowTouch::Tap || touch == MappedInputManager::RowTouch::Up) {
+    if (touch == MappedInputManager::RowTouch::Tap) {
       if (row >= 0 && row < count) {
         onChoice(row);
         ActivityResult res;

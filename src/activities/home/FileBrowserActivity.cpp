@@ -280,9 +280,7 @@ void FileBrowserActivity::onRowLongPress(const int index) {
         [this, ctx](const ActivityResult& res) {
           if (res.isCancelled) return;
 
-          // KeyboardEntryActivity stores the entered text as a StringResult.
-          // If StringResult is not found in your build, check ActivityResult's variant type.
-          const auto* sr = std::get_if<StringResult>(&res.value);
+          const auto* sr = std::get_if<KeyboardResult>(&res.data);
           if (!sr || sr->text.empty()) return;
 
           std::string newName = sr->text;
