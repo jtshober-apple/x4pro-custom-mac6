@@ -16,7 +16,6 @@
 #include "components/UIScale.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
-#include "util/KoSyncStatus.h"
 
 namespace {
 // Bounded UTF-8 truncation: a small stack buffer, no temporary strings.
@@ -184,25 +183,14 @@ void System6Theme::drawHeaderWithRightReserve(const GfxRenderer& r, Rect rect, c
 
   int subtitleX = statusLeft;
   char clippedSubtitle[160] = {};
-  if (subtitle && subtitle[0]) {
+  if (!home && subtitle && subtitle[0]) {
     const int subtitleWidth = fitLabel(r, statusFont, subtitle, std::max(1, (end - x) / 4), clippedSubtitle);
     subtitleX = statusLeft - 12 - subtitleWidth;
     statusLeft = subtitleX;
   }
 
-  // KoSync failed indicator: a boxed X drawn to the left of all other status
-  // items when the last auto-sync attempt did not complete successfully.
-  constexpr int syncMarkSize = 14;
-  constexpr int syncMarkGap = 8;
-  const bool syncFailed = KoSyncStatus::isUnsynced();
-  int syncMarkX = statusLeft;
-  if (syncFailed) {
-    statusLeft -= (syncMarkSize + syncMarkGap);
-    syncMarkX = statusLeft;
-  }
-
   r.fillRect(statusLeft - 6, y + 3, statusEnd - statusLeft + 1, h - 6, false);
-  if (subtitle && subtitle[0]) r.drawText(statusFont, subtitleX, statusTextY, clippedSubtitle);
+  if (!home && subtitle && subtitle[0]) r.drawText(statusFont, subtitleX, statusTextY, clippedSubtitle);
   if (showClock) r.drawText(statusFont, clockX, statusTextY, timeText);
   if (showClock && showPercentage) {
     const int dividerX = percentageX - 6;
@@ -211,11 +199,6 @@ void System6Theme::drawHeaderWithRightReserve(const GfxRenderer& r, Rect rect, c
   if (showPercentage) r.drawText(statusFont, percentageX, statusTextY, percentageText);
   drawBatteryOutline(r, batteryX, batteryY, m.batteryWidth, m.batteryHeight);
   fillBatteryIcon(r, Rect{batteryX, batteryY, m.batteryWidth, m.batteryHeight}, percentage);
-
-  if (syncFailed) {
-    const int syncMarkY = y + (h - syncMarkSize) / 2;
-    KoSyncStatus::drawMark(r, syncMarkX, syncMarkY, syncMarkSize, false);
-  }
 
   const int font = uiScaleSpec().bodyFontId;
   const char* text = title && title[0] ? title : tr(STR_THEME_SYSTEM6);

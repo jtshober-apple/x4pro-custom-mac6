@@ -3,16 +3,16 @@
 #include "components/themes/BaseTheme.h"
 
 namespace System6Metrics {
-constexpr int titleBarHeight = 40;
+constexpr int titleBarHeight = 48;
 constexpr ThemeMetrics makeValues() {
   auto v = BaseMetrics::values;
   v.batteryBarHeight = 0;
-  v.headerHeight = 50;
-  v.homeTopPadding = 50;
+  v.headerHeight = 58;
+  v.homeTopPadding = 58;
   v.homeCoverHeight = 180;
   v.homeCoverTileHeight = 210;
-  v.menuRowHeight = 44;
-  v.menuSpacing = 6;
+  v.menuRowHeight = 56;
+  v.menuSpacing = 8;
   v.listInset = 12;
   v.listSidePadding = 12;
   v.listScrollWidth = 8;
@@ -20,7 +20,7 @@ constexpr ThemeMetrics makeValues() {
   v.listSelectionStyle = 0;
   v.popupFrameThickness = 3;
   v.popupCornerRadius = 0;
-  v.keyboardKeySpacing = 3;
+  v.keyboardKeySpacing = 4;
   v.keyboardCenteredText = true;
   return v;
 }
