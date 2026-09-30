@@ -35,6 +35,7 @@
 #include "activities/ActivityManager.h"
 #include "activities/settings/SdFirmwareUpdateActivity.h"
 #include "components/UITheme.h"
+#include "components/themes/system6/System6Fonts.h"
 #include "fontIds.h"
 #include "images/LoadingIcon.h"
 #include "platform/UsbSerialJtagHandoff.h"
@@ -335,6 +336,10 @@ void setupDisplayAndFonts(bool seamless = false) {
   renderer.insertFont(UI_12_FONT_ID, ui12FontFamily);
   renderer.insertFont(SMALL_FONT_ID, smallFontFamily);
 
+  // Override UI font slots with Chicago bitmap fonts for System 6 theme.
+  // Called after the upstream registrations so these take precedence.
+  registerSystem6Fonts(renderer);
+
   // Discover and load SD card fonts
   sdFontSystem.begin(renderer);
 
@@ -387,16 +392,7 @@ void setup() {
                                     mappedInputManager.isPressed(recoveryButton);
 
   halTiltSensor.begin();
-  halClock.begin();
 
-#if FREEINK_DEVICE_X4 || FREEINK_DEVICE_X3
-  LOG_INF("MAIN", "Hardware detect: %s", gpio.deviceIsX3() ? "X3" : "X4");
-#else
-  LOG_INF("MAIN", "Device: %s", BoardConfig::ACTIVE.name);
-#endif
-
-  // SD Card Initialization
-  // We need 6 open files concurrently when parsing a new chapter
   if (!Storage.begin()) {
     LOG_ERR("MAIN", "SD card initialization failed");
     setupDisplayAndFonts(isSilentReboot);
