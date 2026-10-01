@@ -157,18 +157,24 @@ void System6Theme::drawHeaderWithRightReserve(const GfxRenderer& r, Rect rect, c
   for (int dy = 7; dy < h - 5; dy += 4) r.drawLine(x + 6, y + dy, end - 7, y + dy);
 
   const int statusEnd = std::min(end, rect.x + rect.width - std::max(0, rightReserve));
-  constexpr int statusFont = UI_10_FONT_ID;
+  // Smaller font keeps the menu bar uncluttered, matching the original Mac feel.
+  constexpr int statusFont = SMALL_FONT_ID;
   const int statusTextY = y + (h - r.getLineHeight(statusFont)) / 2;
+
+  // Battery: bare number only (no icon, no % sign), bold when charging.
+  // A fixed slot sized for "100" keeps layout stable as the digit count changes.
   const bool showPercentage =
       SETTINGS.hideBatteryPercentage != CrossPointSettings::HIDE_BATTERY_PERCENTAGE::HIDE_ALWAYS;
-  const int batteryX = statusEnd - 12 - m.batteryWidth;
-  const int batteryY = y + (h - m.batteryHeight) / 2;
   const uint16_t percentage = powerManager.getBatteryPercentage();
-  char percentageText[8] = {};
-  std::snprintf(percentageText, sizeof(percentageText), "%u%%", static_cast<unsigned>(percentage));
-  const int percentageWidth = showPercentage ? r.getTextWidth(statusFont, percentageText) : 0;
-  const int percentageX = batteryX - BaseTheme::batteryPercentSpacing - percentageWidth;
-  int statusLeft = showPercentage ? percentageX : batteryX;
+  const bool charging = gpio.isUsbConnected();
+  const EpdFontFamily::Style batteryStyle = charging ? EpdFontFamily::BOLD : EpdFontFamily::REGULAR;
+  char percentageText[5] = {};
+  std::snprintf(percentageText, sizeof(percentageText), "%u", static_cast<unsigned>(percentage));
+  // Reserve width of "100" in bold so the slot never shifts as the number changes.
+  const int batterySlotWidth =
+      showPercentage ? r.getTextWidth(statusFont, "100", EpdFontFamily::BOLD) : 0;
+  const int batterySlotX = statusEnd - 10 - batterySlotWidth;
+  int statusLeft = showPercentage ? batterySlotX : statusEnd;
 
   char timeText[9] = {};
   const bool showClock =
@@ -177,7 +183,7 @@ void System6Theme::drawHeaderWithRightReserve(const GfxRenderer& r, Rect rect, c
   int clockX = statusLeft;
   if (showClock) {
     const int clockWidth = r.getTextWidth(statusFont, timeText);
-    clockX = statusLeft - 12 - clockWidth;
+    clockX = statusLeft - 10 - clockWidth;
     statusLeft = clockX;
   }
 
@@ -185,20 +191,23 @@ void System6Theme::drawHeaderWithRightReserve(const GfxRenderer& r, Rect rect, c
   char clippedSubtitle[160] = {};
   if (!home && subtitle && subtitle[0]) {
     const int subtitleWidth = fitLabel(r, statusFont, subtitle, std::max(1, (end - x) / 4), clippedSubtitle);
-    subtitleX = statusLeft - 12 - subtitleWidth;
+    subtitleX = statusLeft - 10 - subtitleWidth;
     statusLeft = subtitleX;
   }
 
-  r.fillRect(statusLeft - 6, y + 3, statusEnd - statusLeft + 1, h - 6, false);
+  r.fillRect(statusLeft - 6, y + 3, statusEnd - statusLeft + 6, h - 6, false);
   if (!home && subtitle && subtitle[0]) r.drawText(statusFont, subtitleX, statusTextY, clippedSubtitle);
   if (showClock) r.drawText(statusFont, clockX, statusTextY, timeText);
   if (showClock && showPercentage) {
-    const int dividerX = percentageX - 6;
+    const int dividerX = batterySlotX - 6;
     r.drawLine(dividerX, y + 8, dividerX, y + h - 9);
   }
-  if (showPercentage) r.drawText(statusFont, percentageX, statusTextY, percentageText);
-  drawBatteryOutline(r, batteryX, batteryY, m.batteryWidth, m.batteryHeight);
-  fillBatteryIcon(r, Rect{batteryX, batteryY, m.batteryWidth, m.batteryHeight}, percentage);
+  if (showPercentage) {
+    // Centre the actual digit(s) inside the fixed slot.
+    const int actualWidth = r.getTextWidth(statusFont, percentageText, batteryStyle);
+    const int centeredX = batterySlotX + (batterySlotWidth - actualWidth) / 2;
+    r.drawText(statusFont, centeredX, statusTextY, percentageText, true, batteryStyle);
+  }
 
   const int font = uiScaleSpec().bodyFontId;
   const char* text = title && title[0] ? title : tr(STR_THEME_SYSTEM6);
