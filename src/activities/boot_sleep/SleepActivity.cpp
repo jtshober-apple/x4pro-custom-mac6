@@ -23,6 +23,7 @@
 
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
+#include "RecentBooksStore.h"
 #include "activities/reader/ReaderUtils.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
@@ -560,6 +561,8 @@ void SleepActivity::onEnter() {
       return renderCustomSleepScreen();
     case (CrossPointSettings::SLEEP_SCREEN_MODE::COVER):
       return renderCoverSleepScreen();
+    case (CrossPointSettings::SLEEP_SCREEN_MODE::SYSTEM6_MAC):
+      return renderSystem6SleepScreen();
     case (CrossPointSettings::SLEEP_SCREEN_MODE::COVER_CUSTOM):
       if (APP_STATE.lastSleepFromReader) {
         return renderCoverSleepScreen();
@@ -868,6 +871,315 @@ void SleepActivity::renderLastScreenSleepScreen() const {
 
 void SleepActivity::renderBlankSleepScreen() const {
   renderer.clearScreen();
+  drawSyncMarkIfNeeded(renderer);
+  renderer.displayBuffer(HalDisplay::HALF_REFRESH);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// System 6 / Mac Plus monitor sleep screen
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Draws a monochrome Mac Plus monitor silhouette on the e-ink screen.
+// If a cover BMP is available for the current book, it fills the
+// monitor's "glass" area.  When there is no cover, a byte-perfect
+// System 6 desktop scene is rendered instead: menu bar, grey
+// checkerboard, an open Finder window with the book title, a Hard
+// Disk icon and a Trash icon.
+//
+// All geometry is computed from the live screen dimensions so the
+// layout is orientation-agnostic.
+
+namespace {
+
+// ── primitive helpers (stand-alone; do not depend on System6Theme) ──────────
+
+// One-bit checkerboard over a subrect.
+void mac6Checkerboard(const GfxRenderer& r, int x, int y, int w, int h) {
+  for (int row = 0; row < h; ++row) {
+    const int phase = ((y + row) / 2) & 1;
+    for (int col = phase * 2; col < w; col += 4)
+      r.fillRect(x + col, y + row, std::min(2, w - col), 1);
+  }
+}
+
+// Outline rectangle with a second border 2px inside (Mac double-frame style).
+void mac6Frame(const GfxRenderer& r, int x, int y, int w, int h) {
+  if (w < 8 || h < 8) return;
+  // drop shadow
+  r.fillRect(x + 3, y + 3, w, h);
+  // white fill
+  r.fillRect(x, y, w, h, false);
+  // outer and inner borders
+  r.drawRect(x, y, w, h);
+  r.drawRect(x + 2, y + 2, w - 4, h - 4);
+}
+
+// Small document icon (22×26).
+void mac6DocIcon(const GfxRenderer& r, int x, int y, bool black = true) {
+  r.drawRect(x, y, 22, 26, black);
+  r.drawLine(x + 15, y, x + 15, y + 7, black);
+  r.drawLine(x + 15, y + 7, x + 21, y + 7, black);
+  for (int line = 12; line <= 20; line += 4)
+    r.drawLine(x + 4, y + line, x + 16, y + line, black);
+}
+
+// Simple trash can (24×28 + label).
+void mac6Trash(const GfxRenderer& r, int x, int y, bool black = true) {
+  // lid
+  r.drawLine(x - 2, y + 6, x + 24, y + 6, black);
+  // handle
+  r.drawRect(x + 7, y + 2, 10, 5, black);
+  // body
+  r.drawRect(x, y + 6, 22, 22, black);
+  // vertical ribs
+  for (int rx = 4; rx <= 16; rx += 6)
+    r.drawLine(x + rx, y + 10, x + rx, y + 25, black);
+}
+
+// Hard-disk icon (28×22 + label).
+void mac6HardDisk(const GfxRenderer& r, int x, int y, bool black = true) {
+  r.drawRect(x, y, 28, 22, black);
+  // Label stripe
+  r.fillRect(x + 2, y + 2, 24, 7, black);
+  // Platter dots
+  r.fillRect(x + 4, y + 14, 4, 4, black);
+  r.fillRect(x + 20, y + 14, 4, 4, black);
+}
+
+// Truncate text to fit `maxW` pixels wide (font SMALL_FONT_ID).
+void mac6TruncLabel(const GfxRenderer& r, const char* text, int maxW, char* out, int outLen) {
+  if (!text || outLen <= 0) { if (out) out[0] = '\0'; return; }
+  int n = 0;
+  while (n < outLen - 1 && text[n]) { out[n] = text[n]; ++n; }
+  out[n] = '\0';
+  if (r.getTextWidth(SMALL_FONT_ID, out) <= maxW) return;
+  const char* kEll = "...";
+  while (n > 0) {
+    --n;
+    while (n && (static_cast<unsigned char>(out[n]) & 0xc0) == 0x80) --n;
+    if (n + 3 < outLen) {
+      std::memcpy(out + n, kEll, 4);
+      if (r.getTextWidth(SMALL_FONT_ID, out) <= maxW) return;
+    }
+  }
+  std::memcpy(out, kEll, 4);
+}
+
+}  // namespace (anonymous, System 6 helpers)
+
+// ── renderSystem6SleepScreen ─────────────────────────────────────────────────
+
+void SleepActivity::renderSystem6SleepScreen() const {
+  const int W = renderer.getScreenWidth();
+  const int H = renderer.getScreenHeight();
+
+  // ── Monitor geometry ──────────────────────────────────────────────────────
+  // Outer plastic case.  Proportioned after the Mac Plus:
+  // slightly taller than wide, with a large bottom section
+  // that houses the floppy slot and speaker grille.
+  constexpr int CASE_W = 296;
+  constexpr int CASE_H = 362;
+  const int caseX = (W - CASE_W) / 2;
+  const int caseY = (H - CASE_H) / 2 - 16;  // nudge slightly above centre
+
+  // Screen "glass" area inside the bezel.
+  // Left/right bezel: 38 px; top bezel: 36 px.
+  // The bottom section (floppy, speaker, logo) gets the rest.
+  constexpr int BEZ_LR  = 38;
+  constexpr int BEZ_TOP = 36;
+  constexpr int SCR_W   = CASE_W - BEZ_LR * 2;   // 220
+  constexpr int SCR_H   = 166;
+  const int scrX = caseX + BEZ_LR;
+  const int scrY = caseY + BEZ_TOP;
+
+  // Bottom section metrics.
+  const int botY = scrY + SCR_H;                  // top of floppy/speaker zone
+  const int botH = (caseY + CASE_H) - botY;        // pixels remaining in case
+
+  // ── Step 1: clear the screen ──────────────────────────────────────────────
+  renderer.clearScreen();
+
+  // ── Step 2: cover image (if any) ─────────────────────────────────────────
+  // Try to locate a cover BMP for the current book via RECENT_BOOKS so we
+  // avoid loading the entire EPUB again.
+  bool hasCover = false;
+  if (!APP_STATE.openEpubPath.empty()) {
+    const auto& books = RECENT_BOOKS.getBooks();
+    for (const auto& book : books) {
+      if (book.path != APP_STATE.openEpubPath) continue;
+      if (book.coverBmpPath.empty()) break;
+
+      // The full-res cover BMP lives at book.coverBmpPath; the thumbnail
+      // at a height-derived path.  Try the thumbnail first (it's already
+      // small enough for the 220-px monitor screen), then fall back to
+      // the full-res version.
+      const std::string thumbPath = UITheme::getCoverThumbPath(book.coverBmpPath, SCR_H);
+      const char* tryPaths[2] = { thumbPath.c_str(), book.coverBmpPath.c_str() };
+      for (const char* path : tryPaths) {
+        if (!Storage.exists(path)) continue;
+        HalFile file;
+        if (!Storage.openFileForRead("SLP", path, file)) continue;
+        Bitmap bmp(file);
+        if (bmp.parseHeaders() != BmpReaderError::Ok) { file.close(); continue; }
+
+        // Draw centered inside the screen rect.
+        // drawBitmap(bmp, x, y, clipW, clipH, cropX, cropY):
+        //   x/y = top-left of the image on screen,
+        //   clipW/clipH = maximum width/height to draw.
+        // We centre the bitmap within the screen rect; drawBitmap clips to clipW×clipH.
+        const int bw = bmp.getWidth();
+        const int bh = bmp.getHeight();
+        // Scale to fit: find the largest scale where bw*s <= SCR_W and bh*s <= SCR_H.
+        // drawBitmap does not scale, so we offset to centre and clip to the rect.
+        const int offX = scrX + std::max(0, (SCR_W - bw) / 2);
+        const int offY = scrY + std::max(0, (SCR_H - bh) / 2);
+        renderer.drawBitmap(bmp, offX, offY, W, H, 0.0f, 0.0f);
+        file.close();
+        hasCover = true;
+        break;
+      }
+      break;
+    }
+  }
+
+  // ── Step 3: System 6 desktop scene (no cover) ─────────────────────────────
+  if (!hasCover) {
+    // Menu bar: solid black strip at very top of screen area.
+    constexpr int MB_H = 13;
+    renderer.fillRect(scrX, scrY, SCR_W, MB_H);
+
+    // Menu bar text: apple icon (U+F8FF private-use, drawn by the system font
+    // as the Apple logo; falls back to a space on any font that lacks it) plus
+    // the standard System 6 menus, rendered white-on-black.
+    renderer.drawText(SMALL_FONT_ID, scrX + 3, scrY + 2,
+                      " \xEF\xA3\xBF  File  Edit  View  Special", /*black=*/false);
+
+    // Desktop checkerboard below the menu bar.
+    mac6Checkerboard(renderer, scrX, scrY + MB_H, SCR_W, SCR_H - MB_H);
+
+    // ── Hard Disk icon (top-right of desktop) ────────────────────────────
+    constexpr int HD_W = 28, HD_H = 22;
+    const int hdX = scrX + SCR_W - HD_W - 6;
+    const int hdY = scrY + MB_H + 6;
+    // White box so the icon stands out over the checkerboard.
+    renderer.fillRect(hdX - 2, hdY - 2, HD_W + 4, HD_H + 4 + 12, false);
+    mac6HardDisk(renderer, hdX, hdY);
+    {
+      const char* hdLabel = "Macintosh HD";
+      const int lw = renderer.getTextWidth(SMALL_FONT_ID, hdLabel);
+      renderer.drawText(SMALL_FONT_ID, hdX + (HD_W - lw) / 2, hdY + HD_H + 2, hdLabel);
+    }
+
+    // ── Open Finder window ───────────────────────────────────────────────
+    // Use the current book title for the window title and the file inside.
+    std::string bookTitle;
+    if (!APP_STATE.openEpubPath.empty()) {
+      const auto& books = RECENT_BOOKS.getBooks();
+      for (const auto& book : books) {
+        if (book.path == APP_STATE.openEpubPath && !book.title.empty()) {
+          bookTitle = book.title;
+          break;
+        }
+      }
+      if (bookTitle.empty()) {
+        // Fall back to the filename stem.
+        const auto slash = APP_STATE.openEpubPath.rfind('/');
+        const auto dot   = APP_STATE.openEpubPath.rfind('.');
+        const size_t s   = (slash == std::string::npos ? 0 : slash + 1);
+        const size_t e   = (dot   == std::string::npos || dot < s ? APP_STATE.openEpubPath.size() : dot);
+        bookTitle = APP_STATE.openEpubPath.substr(s, e - s);
+      }
+    }
+    if (bookTitle.empty()) bookTitle = "Documents";
+
+    constexpr int WIN_W = 130;
+    constexpr int WIN_H = 80;
+    const int winX = scrX + 4;
+    const int winY = scrY + MB_H + 4;
+    mac6Frame(renderer, winX, winY, WIN_W, WIN_H);
+
+    // Title bar (black) + close box.
+    constexpr int TB_H = 11;
+    renderer.fillRect(winX + 1, winY + 1, WIN_W - 2, TB_H);
+    renderer.drawRect(winX + 1, winY + 2, 9, 9, false);      // close box (white)
+    renderer.drawRect(winX + 2, winY + 3, 7, 7, false);
+
+    // Window title (white on black, truncated).
+    char wtitle[40];
+    mac6TruncLabel(renderer, bookTitle.c_str(), WIN_W - 20, wtitle, sizeof(wtitle));
+    renderer.drawText(SMALL_FONT_ID, winX + 14, winY + 2, wtitle, /*black=*/false);
+
+    // White interior.
+    renderer.fillRect(winX + 1, winY + TB_H + 1, WIN_W - 2, WIN_H - TB_H - 2, false);
+
+    // File entry: doc icon + title.
+    const int fileY = winY + TB_H + 6;
+    mac6DocIcon(renderer, winX + 6, fileY);
+    char ftitle[40];
+    mac6TruncLabel(renderer, bookTitle.c_str(), WIN_W - 35, ftitle, sizeof(ftitle));
+    renderer.drawText(SMALL_FONT_ID, winX + 32, fileY + 4, ftitle);
+
+    // ── Trash icon (bottom-right of desktop) ─────────────────────────────
+    constexpr int TR_W = 22, TR_H = 28;
+    const int trX = scrX + SCR_W - TR_W - 8;
+    const int trY = scrY + SCR_H - TR_H - 16;
+    renderer.fillRect(trX - 4, trY - 2, TR_W + 8, TR_H + 14, false);
+    mac6Trash(renderer, trX, trY);
+    {
+      const char* trLabel = "Trash";
+      const int lw = renderer.getTextWidth(SMALL_FONT_ID, trLabel);
+      renderer.drawText(SMALL_FONT_ID, trX + (TR_W - lw) / 2, trY + TR_H + 2, trLabel);
+    }
+  }
+
+  // ── Step 4: monitor case frame ────────────────────────────────────────────
+  // Mask everything outside the case with white.
+  renderer.fillRect(0, 0, caseX, H, false);
+  renderer.fillRect(caseX + CASE_W, 0, W - (caseX + CASE_W), H, false);
+  renderer.fillRect(caseX, 0, CASE_W, caseY, false);
+  renderer.fillRect(caseX, caseY + CASE_H, CASE_W, H - (caseY + CASE_H), false);
+
+  // Bezel areas (white, mask cover image or desktop outside the glass).
+  renderer.fillRect(caseX, caseY, CASE_W, BEZ_TOP, false);           // top bezel
+  renderer.fillRect(caseX, botY, CASE_W, botH, false);               // bottom section
+  renderer.fillRect(caseX, scrY, BEZ_LR, SCR_H, false);             // left bezel
+  renderer.fillRect(scrX + SCR_W, scrY, BEZ_LR, SCR_H, false);     // right bezel
+
+  // Screen surround (double thin border around the glass).
+  renderer.drawRect(scrX - 2, scrY - 2, SCR_W + 4, SCR_H + 4);
+  renderer.drawRect(scrX - 1, scrY - 1, SCR_W + 2, SCR_H + 2);
+
+  // Outer case border (double-line for thickness).
+  renderer.drawRect(caseX, caseY, CASE_W, CASE_H);
+  renderer.drawRect(caseX + 1, caseY + 1, CASE_W - 2, CASE_H - 2);
+
+  // Separator between screen bezel and bottom section.
+  renderer.drawLine(caseX + 1, botY, caseX + CASE_W - 2, botY);
+
+  // ── Floppy disk slot (centred in bottom section, ~1/3 down) ──────────────
+  constexpr int FLOP_W = 76, FLOP_H = 8;
+  const int flopX = caseX + (CASE_W - FLOP_W) / 2;
+  const int flopY = botY + botH / 3 - FLOP_H / 2;
+  renderer.drawRect(flopX, flopY, FLOP_W, FLOP_H);
+  // Eject notch (small inset rectangle on the right end).
+  renderer.drawRect(flopX + FLOP_W - 10, flopY + 2, 6, FLOP_H - 4);
+
+  // ── Speaker grille (left side of bottom section: 3 columns × 6 rows) ────
+  const int spkX = caseX + 14;
+  const int spkY = botY + 12;
+  for (int row = 0; row < 6; ++row)
+    for (int col = 0; col < 3; ++col)
+      renderer.fillRect(spkX + col * 6, spkY + row * 7, 3, 4);
+
+  // ── "Macintosh" wordmark (centred below floppy slot) ─────────────────────
+  const int logoY = flopY + FLOP_H + 6;
+  const int logoX = caseX + (CASE_W - renderer.getTextWidth(SMALL_FONT_ID, "Macintosh")) / 2;
+  renderer.drawText(SMALL_FONT_ID, logoX, logoY, "Macintosh");
+
+  // ── Power indicator dot (bottom-right corner of case, inside border) ──────
+  renderer.fillRect(caseX + CASE_W - 12, caseY + CASE_H - 12, 5, 5);
+
+  // ── Step 5: sync mark and refresh ─────────────────────────────────────────
   drawSyncMarkIfNeeded(renderer);
   renderer.displayBuffer(HalDisplay::HALF_REFRESH);
 }
