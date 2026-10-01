@@ -1211,8 +1211,30 @@ void SleepActivity::renderSystem6SleepScreen() const {
       renderer.fillRect(caseX + s.x + 1, botY + s.y + 1, s.w - 2, 1, true);
   }
 
-  // ── Step 5: refresh ───────────────────────────────────────────────────────
-  // The sync indicator is drawn inside the Mac menu bar above; the floating
-  // corner mark would break the full-bleed frame, so it is intentionally omitted.
-  renderer.displayBuffer(HalDisplay::HALF_REFRESH);
+  // ── Step 5: refresh (4-level grayscale) ──────────────────────────────────
+  // BW base carries all the crisp black/white elements drawn above.
+  // The MSB plane then tints every case-body surface from pure white to light
+  // grey, giving the warm beige-to-grey translation on the 4-level panel.
+  // Must stay HALF: the grey-nudge LUT is calibrated against the HALF waveform.
+  renderer.displayGrayscaleBase(HalDisplay::HALF_REFRESH);
+
+  // LSB plane — dark-grey tier.  Nothing here; leaving LSB = 0 everywhere
+  // keeps the case body in the lighter of the two grey tones.
+  renderer.clearScreen(0x00);
+  renderer.setRenderMode(GfxRenderer::GRAYSCALE_LSB);
+  renderer.copyGrayscaleLsbBuffers();
+
+  // MSB plane — mark every case-body region for the light-grey modification.
+  // Pixels that are white in the MSB plane (0xFF) and black in the LSB plane
+  // (0x00) land on the light-grey waveform step in the X3/X4 LUT.
+  renderer.clearScreen(0x00);
+  renderer.setRenderMode(GfxRenderer::GRAYSCALE_MSB);
+  renderer.fillRect(caseX,        caseY, CASE_W, BEZ_TOP, false);  // top bezel
+  renderer.fillRect(caseX,        scrY,  BEZ_LR, SCR_H,   false);  // left bezel
+  renderer.fillRect(scrX + SCR_W, scrY,  BEZ_LR, SCR_H,   false);  // right bezel
+  renderer.fillRect(caseX,        botY,  CASE_W, botH,    false);   // bottom section
+  renderer.copyGrayscaleMsbBuffers();
+
+  renderer.displayGrayBuffer();
+  renderer.setRenderMode(GfxRenderer::BW);
 }
