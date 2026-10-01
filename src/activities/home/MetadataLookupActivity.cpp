@@ -13,6 +13,8 @@
 #include <string>
 
 #include "RecentBooksStore.h"
+#include "SilentRestart.h"
+#include "activities/network/WifiSelectionActivity.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
 #include "network/HttpDownloader.h"
@@ -28,10 +30,45 @@ MetadataLookupActivity::MetadataLookupActivity(GfxRenderer& renderer, MappedInpu
 
 void MetadataLookupActivity::onEnter() {
   Activity::onEnter();
-  state_ = LOOKING_UP;
   foundTitle_[0] = '\0';
   foundAuthor_[0] = '\0';
   doneAtMs_ = 0;
+
+  if (WiFi.status() == WL_CONNECTED) {
+    state_ = LOOKING_UP;
+    requestUpdate();
+    return;
+  }
+
+  shouldTearDownWifiOnExit_ = true;
+  launchWifiSelection();
+}
+
+void MetadataLookupActivity::onExit() {
+  Activity::onExit();
+
+  if (shouldTearDownWifiOnExit_ && WiFi.getMode() != WIFI_MODE_NULL) {
+    WiFi.disconnect(false);
+    delay(30);
+    silentRestart();
+  }
+}
+
+void MetadataLookupActivity::launchWifiSelection() {
+  LOG_INF(TAG, "No WiFi — launching WiFi selection before metadata lookup");
+  startActivityForResult(
+      makeUniqueNoThrow<WifiSelectionActivity>(renderer, mappedInput),
+      [this](const ActivityResult& result) { onWifiSelectionComplete(!result.isCancelled); });
+}
+
+void MetadataLookupActivity::onWifiSelectionComplete(const bool connected) {
+  if (!connected) {
+    LOG_INF(TAG, "WiFi selection cancelled — skipping metadata lookup");
+    finish();
+    return;
+  }
+
+  state_ = LOOKING_UP;
   requestUpdate();
 }
 
@@ -47,16 +84,17 @@ void MetadataLookupActivity::loop() {
 
   // After a result screen, tap or Back exits.
   int x = 0, y = 0;
-  if (mappedInput.wasPressed(MappedInputManager::Button::Back) ||
-      mappedInput.wasScreenTapped(x, y) ||
-      (doneAtMs_ != 0 && (millis() - doneAtMs_) > 2500)) {
+  if (state_ != WAITING_FOR_WIFI &&
+      (mappedInput.wasPressed(MappedInputManager::Button::Back) ||
+       mappedInput.wasScreenTapped(x, y) ||
+       (doneAtMs_ != 0 && (millis() - doneAtMs_) > 2500))) {
     finish();
   }
 }
 
 void MetadataLookupActivity::doWork() {
   if (WiFi.status() != WL_CONNECTED) {
-    LOG_INF(TAG, "No WiFi — skipping metadata lookup");
+    LOG_ERR(TAG, "WiFi lost before metadata fetch");
     state_ = NO_WIFI;
     return;
   }
@@ -127,6 +165,10 @@ void MetadataLookupActivity::render(RenderLock&&) {
   const int midY = pageHeight / 2;
 
   switch (state_) {
+    case WAITING_FOR_WIFI:
+      // WifiSelectionActivity is covering the screen; nothing to draw.
+      break;
+
     case LOOKING_UP:
       renderer.drawCenteredText(UI_12_FONT_ID, midY, tr(STR_METADATA_LOOKING_UP));
       break;
@@ -158,7 +200,7 @@ void MetadataLookupActivity::render(RenderLock&&) {
       break;
   }
 
-  if (state_ != LOOKING_UP) {
+  if (state_ != LOOKING_UP && state_ != WAITING_FOR_WIFI) {
     const auto labels = mappedInput.mapLabels(tr(STR_BACK), "", "", "");
     GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
   }
