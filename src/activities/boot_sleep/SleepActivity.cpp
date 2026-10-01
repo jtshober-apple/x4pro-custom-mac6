@@ -1189,6 +1189,28 @@ void SleepActivity::renderSystem6SleepScreen() const {
   // ── Power indicator dot (bottom-right corner of case, inside border) ──────
   renderer.fillRect(caseX + CASE_W - sc(12), caseY + CASE_H - sc(12), sc(5), sc(5));
 
+  // ── Wear and texture ──────────────────────────────────────────────────────
+  // Screen recess: 1-px shadow on the left and top inner edges of the bezel
+  // opening, suggesting the screen glass is set back into the plastic.
+  renderer.drawLine(scrX - 1, scrY,     scrX - 1, scrY + SCR_H - 1, true);  // left
+  renderer.drawLine(scrX,     scrY - 1, scrX + SCR_W - 1, scrY - 1, true);  // top
+
+  // Scuff marks: short horizontal strokes on the bottom bezel body.
+  // Placed clear of the speaker grille (left edge) and floppy/wordmark (centre).
+  // Each mark is 2 px tall — second row shorter for a natural taper.
+  const struct { int x, y, w; } kScuffs[] = {
+      { sc(19),  sv(28), sc(9)  },   // left, above grille
+      { sc(23),  sv(58), sc(5)  },   // left, mid
+      { sc(240), sv(20), sc(10) },   // right, upper
+      { sc(244), sv(52), sc(6)  },   // right, mid
+      { sc(195), sv(82), sc(7)  },   // lower centre-right
+      { sc(88),  sv(88), sc(5)  },   // lower centre-left
+  };
+  for (const auto& s : kScuffs) {
+      renderer.fillRect(caseX + s.x,     botY + s.y,     s.w,     1, true);
+      renderer.fillRect(caseX + s.x + 1, botY + s.y + 1, s.w - 2, 1, true);
+  }
+
   // ── Step 5: refresh ───────────────────────────────────────────────────────
   // The sync indicator is drawn inside the Mac menu bar above; the floating
   // corner mark would break the full-bleed frame, so it is intentionally omitted.
