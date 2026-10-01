@@ -974,21 +974,22 @@ void SleepActivity::renderSystem6SleepScreen() const {
   const int H = renderer.getScreenHeight();
 
   // ── Monitor geometry ──────────────────────────────────────────────────────
-  // Outer plastic case.  Proportioned after the Mac Plus:
-  // slightly taller than wide, with a large bottom section
-  // that houses the floppy slot and speaker grille.
-  constexpr int CASE_W = 296;
-  constexpr int CASE_H = 362;
-  const int caseX = (W - CASE_W) / 2;
-  const int caseY = (H - CASE_H) / 2 - 16;  // nudge slightly above centre
+  // Scale the Mac Plus proportions (296 × 362 reference) to fill the full
+  // display width so every detail is easy to read.
+  // All dimensions are derived from W via integer arithmetic: sc(v) = v * W / 296.
+  auto sc = [W](int v) -> int { return v * W / 296; };
+
+  const int CASE_W = W;
+  const int CASE_H = sc(362);
+  const int caseX  = 0;
+  const int caseY  = (H - CASE_H) / 2 - H / 50;  // slightly above centre
 
   // Screen "glass" area inside the bezel.
-  // Left/right bezel: 38 px; top bezel: 36 px.
-  // The bottom section (floppy, speaker, logo) gets the rest.
-  constexpr int BEZ_LR  = 38;
-  constexpr int BEZ_TOP = 36;
-  constexpr int SCR_W   = CASE_W - BEZ_LR * 2;   // 220
-  constexpr int SCR_H   = 166;
+  // Left/right bezel: 38/296 of case width; top bezel: 36/296.
+  const int BEZ_LR  = sc(38);
+  const int BEZ_TOP = sc(36);
+  const int SCR_W   = CASE_W - BEZ_LR * 2;
+  const int SCR_H   = sc(166);
   const int scrX = caseX + BEZ_LR;
   const int scrY = caseY + BEZ_TOP;
 
@@ -1045,24 +1046,24 @@ void SleepActivity::renderSystem6SleepScreen() const {
   // ── Step 3: System 6 desktop scene (no cover) ─────────────────────────────
   if (!hasCover) {
     // Menu bar: solid black strip at very top of screen area.
-    constexpr int MB_H = 13;
+    const int MB_H = sc(13);
     renderer.fillRect(scrX, scrY, SCR_W, MB_H);
 
     // Menu bar text: apple icon (U+F8FF private-use, drawn by the system font
     // as the Apple logo; falls back to a space on any font that lacks it) plus
     // the standard System 6 menus, rendered white-on-black.
-    renderer.drawText(SMALL_FONT_ID, scrX + 3, scrY + 2,
+    renderer.drawText(SMALL_FONT_ID, scrX + sc(3), scrY + sc(2),
                       " \xEF\xA3\xBF  File  Edit  View  Special", /*black=*/false);
 
     // Desktop checkerboard below the menu bar.
     mac6Checkerboard(renderer, scrX, scrY + MB_H, SCR_W, SCR_H - MB_H);
 
     // ── Hard Disk icon (top-right of desktop) ────────────────────────────
-    constexpr int HD_W = 28, HD_H = 22;
-    const int hdX = scrX + SCR_W - HD_W - 6;
-    const int hdY = scrY + MB_H + 6;
+    const int HD_W = sc(28), HD_H = sc(22);
+    const int hdX = scrX + SCR_W - HD_W - sc(6);
+    const int hdY = scrY + MB_H + sc(6);
     // White box so the icon stands out over the checkerboard.
-    renderer.fillRect(hdX - 2, hdY - 2, HD_W + 4, HD_H + 4 + 12, false);
+    renderer.fillRect(hdX - sc(2), hdY - sc(2), HD_W + sc(8), HD_H + sc(16), false);
     mac6HardDisk(renderer, hdX, hdY);
     {
       const char* hdLabel = "Macintosh HD";
@@ -1092,17 +1093,17 @@ void SleepActivity::renderSystem6SleepScreen() const {
     }
     if (bookTitle.empty()) bookTitle = "Documents";
 
-    constexpr int WIN_W = 130;
-    constexpr int WIN_H = 80;
-    const int winX = scrX + 4;
-    const int winY = scrY + MB_H + 4;
+    const int WIN_W = sc(130);
+    const int WIN_H = sc(80);
+    const int winX = scrX + sc(4);
+    const int winY = scrY + MB_H + sc(4);
     mac6Frame(renderer, winX, winY, WIN_W, WIN_H);
 
     // Title bar (black) + close box.
-    constexpr int TB_H = 11;
+    const int TB_H = sc(11);
     renderer.fillRect(winX + 1, winY + 1, WIN_W - 2, TB_H);
-    renderer.drawRect(winX + 1, winY + 2, 9, 9, false);      // close box (white)
-    renderer.drawRect(winX + 2, winY + 3, 7, 7, false);
+    renderer.drawRect(winX + 1, winY + sc(2), sc(9), sc(9), false);   // close box (white)
+    renderer.drawRect(winX + sc(2), winY + sc(3), sc(7), sc(7), false);
 
     // Window title (white on black, truncated).
     char wtitle[40];
@@ -1113,17 +1114,17 @@ void SleepActivity::renderSystem6SleepScreen() const {
     renderer.fillRect(winX + 1, winY + TB_H + 1, WIN_W - 2, WIN_H - TB_H - 2, false);
 
     // File entry: doc icon + title.
-    const int fileY = winY + TB_H + 6;
-    mac6DocIcon(renderer, winX + 6, fileY);
+    const int fileY = winY + TB_H + sc(6);
+    mac6DocIcon(renderer, winX + sc(6), fileY);
     char ftitle[40];
-    mac6TruncLabel(renderer, bookTitle.c_str(), WIN_W - 35, ftitle, sizeof(ftitle));
-    renderer.drawText(SMALL_FONT_ID, winX + 32, fileY + 4, ftitle);
+    mac6TruncLabel(renderer, bookTitle.c_str(), WIN_W - sc(35), ftitle, sizeof(ftitle));
+    renderer.drawText(SMALL_FONT_ID, winX + sc(32), fileY + sc(4), ftitle);
 
     // ── Trash icon (bottom-right of desktop) ─────────────────────────────
-    constexpr int TR_W = 22, TR_H = 28;
-    const int trX = scrX + SCR_W - TR_W - 8;
-    const int trY = scrY + SCR_H - TR_H - 16;
-    renderer.fillRect(trX - 4, trY - 2, TR_W + 8, TR_H + 14, false);
+    const int TR_W = sc(22), TR_H = sc(28);
+    const int trX = scrX + SCR_W - TR_W - sc(8);
+    const int trY = scrY + SCR_H - TR_H - sc(16);
+    renderer.fillRect(trX - sc(4), trY - sc(2), TR_W + sc(8), TR_H + sc(14), false);
     mac6Trash(renderer, trX, trY);
     {
       const char* trLabel = "Trash";
@@ -1146,8 +1147,8 @@ void SleepActivity::renderSystem6SleepScreen() const {
   renderer.fillRect(scrX + SCR_W, scrY, BEZ_LR, SCR_H, false);     // right bezel
 
   // Screen surround (double thin border around the glass).
-  renderer.drawRect(scrX - 2, scrY - 2, SCR_W + 4, SCR_H + 4);
-  renderer.drawRect(scrX - 1, scrY - 1, SCR_W + 2, SCR_H + 2);
+  renderer.drawRect(scrX - sc(2), scrY - sc(2), SCR_W + sc(4), SCR_H + sc(4));
+  renderer.drawRect(scrX - sc(1), scrY - sc(1), SCR_W + sc(2), SCR_H + sc(2));
 
   // Outer case border (double-line for thickness).
   renderer.drawRect(caseX, caseY, CASE_W, CASE_H);
@@ -1157,27 +1158,27 @@ void SleepActivity::renderSystem6SleepScreen() const {
   renderer.drawLine(caseX + 1, botY, caseX + CASE_W - 2, botY);
 
   // ── Floppy disk slot (centred in bottom section, ~1/3 down) ──────────────
-  constexpr int FLOP_W = 76, FLOP_H = 8;
+  const int FLOP_W = sc(76), FLOP_H = sc(8);
   const int flopX = caseX + (CASE_W - FLOP_W) / 2;
   const int flopY = botY + botH / 3 - FLOP_H / 2;
   renderer.drawRect(flopX, flopY, FLOP_W, FLOP_H);
   // Eject notch (small inset rectangle on the right end).
-  renderer.drawRect(flopX + FLOP_W - 10, flopY + 2, 6, FLOP_H - 4);
+  renderer.drawRect(flopX + FLOP_W - sc(10), flopY + sc(2), sc(6), FLOP_H - sc(4));
 
   // ── Speaker grille (left side of bottom section: 3 columns × 6 rows) ────
-  const int spkX = caseX + 14;
-  const int spkY = botY + 12;
+  const int spkX = caseX + sc(14);
+  const int spkY = botY + sc(12);
   for (int row = 0; row < 6; ++row)
     for (int col = 0; col < 3; ++col)
-      renderer.fillRect(spkX + col * 6, spkY + row * 7, 3, 4);
+      renderer.fillRect(spkX + col * sc(6), spkY + row * sc(7), sc(3), sc(4));
 
   // ── "Macintosh" wordmark (centred below floppy slot) ─────────────────────
-  const int logoY = flopY + FLOP_H + 6;
+  const int logoY = flopY + FLOP_H + sc(6);
   const int logoX = caseX + (CASE_W - renderer.getTextWidth(SMALL_FONT_ID, "Macintosh")) / 2;
   renderer.drawText(SMALL_FONT_ID, logoX, logoY, "Macintosh");
 
   // ── Power indicator dot (bottom-right corner of case, inside border) ──────
-  renderer.fillRect(caseX + CASE_W - 12, caseY + CASE_H - 12, 5, 5);
+  renderer.fillRect(caseX + CASE_W - sc(12), caseY + CASE_H - sc(12), sc(5), sc(5));
 
   // ── Step 5: sync mark and refresh ─────────────────────────────────────────
   drawSyncMarkIfNeeded(renderer);
