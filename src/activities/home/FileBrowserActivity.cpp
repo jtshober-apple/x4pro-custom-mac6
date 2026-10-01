@@ -10,6 +10,7 @@
 
 #include "CrossPointSettings.h"
 #include "MappedInputManager.h"
+#include "MetadataLookupActivity.h"
 #include "RecentBooksStore.h"
 #include "activities/util/ConfirmationActivity.h"
 #include "activities/util/ContextMenuActivity.h"
@@ -45,6 +46,15 @@ std::string titleFromFilename(const std::string& filename) {
 
 std::string getFileName(std::string filename);
 std::string getFileExtension(const std::string& filename);
+
+// Returns the lower-case extension (without dot) of a filename, or empty.
+static std::string lowerExtension(const std::string& name) {
+  const auto dot = name.rfind('.');
+  if (dot == std::string::npos) return {};
+  std::string ext = name.substr(dot + 1);
+  for (char& c : ext) c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
+  return ext;
+}
 
 FileBrowserActivity::FileBrowserActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
                                          std::string initialPath, const Mode mode)
@@ -309,6 +319,27 @@ void FileBrowserActivity::onRowLongPress(const int index) {
             clearBookCache(ctx->fullOldPath);
             RECENT_BOOKS.updatePath(ctx->fullOldPath, fullNewPath, "", "");
             RECENT_BOOKS.updateBook(fullNewPath, newTitle, existingAuthor, "");
+          }
+
+          // For epub/xtc files, launch a metadata lookup so title, author and
+          // cover are fetched from OpenLibrary and baked into the cache.
+          if (!ctx->isDirectory) {
+            const std::string ext = lowerExtension(newName);
+            if (ext == "epub" || ext == "xtc") {
+              const std::string newTitle = titleFromFilename(newName);
+              startActivityForResult(
+                  makeUniqueNoThrow<MetadataLookupActivity>(renderer, mappedInput, fullNewPath,
+                                                            newTitle),
+                  [this, fullNewPath, newName, ctx](const ActivityResult&) {
+                    RenderLock lock(*this);
+                    loadFiles();
+                    const std::string newEntry = newName + (ctx->isDirectory ? "/" : "");
+                    nav.selected = static_cast<int>(findEntry(newEntry));
+                    nav.follow(listCount());
+                    requestUpdate(true);
+                  });
+              return;
+            }
           }
 
           {

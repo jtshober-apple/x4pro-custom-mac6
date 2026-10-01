@@ -9,6 +9,9 @@
 #include <Utf8.h>
 #include <ZipFile.h>
 
+#include <functional>
+#include <string>
+
 #include "Epub/parsers/ContainerParser.h"
 #include "Epub/parsers/ContentOpfParser.h"
 #include "Epub/parsers/TocNavParser.h"
@@ -507,6 +510,43 @@ bool Epub::load(const bool buildIfMissing, const bool skipLoadingCss) {
     return false;
   }
   LOG_DBG("EBP", "OPF pass completed in %lu ms", millis() - opfStart);
+
+  // Apply user metadata override if present (written by MetadataLookupActivity
+  // after a rename). Reading and overwriting the LOCAL bookMetadata struct here
+  // causes buildBookBin() to bake the correct title/author into book.bin
+  // permanently, so subsequent cache-hit loads return the right values without
+  // re-parsing the OPF.
+  {
+    const std::string overridePath = cachePath + "/meta_override.txt";
+    HalFile overrideFile;
+    if (Storage.openFileForRead("EBP", overridePath, overrideFile)) {
+      std::string oTitle, oAuthor;
+      bool readingAuthor = false;
+      while (overrideFile.available()) {
+        const char c = static_cast<char>(overrideFile.read());
+        if (c == '\r') continue;  // skip CR in CRLF
+        if (c == '\n') {
+          if (!readingAuthor) {
+            readingAuthor = true;
+          } else {
+            break;
+          }
+        } else if (!readingAuthor) {
+          oTitle += c;
+        } else {
+          oAuthor += c;
+        }
+      }
+      if (!oTitle.empty()) {
+        bookMetadata.title = oTitle;
+        LOG_INF("EBP", "Override title: '%s'", bookMetadata.title.c_str());
+      }
+      if (!oAuthor.empty()) {
+        bookMetadata.author = oAuthor;
+        LOG_INF("EBP", "Override author: '%s'", bookMetadata.author.c_str());
+      }
+    }
+  }
 
   // TOC Pass - try EPUB 3 nav first, fall back to NCX
   const uint32_t tocStart = millis();
