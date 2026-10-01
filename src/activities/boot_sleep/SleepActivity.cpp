@@ -979,10 +979,14 @@ void SleepActivity::renderSystem6SleepScreen() const {
   // All dimensions are derived from W via integer arithmetic: sc(v) = v * W / 296.
   auto sc = [W](int v) -> int { return v * W / 296; };
 
+  // The outer case fills the entire display — no padding, no centering.
+  // The interior proportions (bezels, screen, bottom section) are still
+  // scaled from W so the Mac Plus ratios are preserved horizontally; the
+  // extra vertical space goes into the bottom section (floppy/speaker area).
   const int CASE_W = W;
-  const int CASE_H = sc(362);
+  const int CASE_H = H;
   const int caseX  = 0;
-  const int caseY  = (H - CASE_H) / 2 - H / 50;  // slightly above centre
+  const int caseY  = 0;
 
   // Screen "glass" area inside the bezel.
   // Left/right bezel: 38/296 of case width; top bezel: 36/296.
@@ -1049,11 +1053,17 @@ void SleepActivity::renderSystem6SleepScreen() const {
     const int MB_H = sc(13);
     renderer.fillRect(scrX, scrY, SCR_W, MB_H);
 
-    // Menu bar text: apple icon (U+F8FF private-use, drawn by the system font
-    // as the Apple logo; falls back to a space on any font that lacks it) plus
-    // the standard System 6 menus, rendered white-on-black.
+    // Menu bar text: apple icon + menus (white-on-black).
+    // If a KoSync upload is pending, append a small sync indicator at the right
+    // of the bar instead of the floating X that would overlay the frame.
     renderer.drawText(SMALL_FONT_ID, scrX + sc(3), scrY + sc(2),
                       " \xEF\xA3\xBF  File  Edit  View  Special", /*black=*/false);
+    if (KoSyncStatus::isUnsynced()) {
+      const char* syncLabel = "\xe2\x86\x91";  // UTF-8 ↑ (upload arrow)
+      const int slw = renderer.getTextWidth(SMALL_FONT_ID, syncLabel);
+      renderer.drawText(SMALL_FONT_ID, scrX + SCR_W - slw - sc(3), scrY + sc(2),
+                        syncLabel, /*black=*/false);
+    }
 
     // Desktop checkerboard below the menu bar.
     mac6Checkerboard(renderer, scrX, scrY + MB_H, SCR_W, SCR_H - MB_H);
@@ -1180,7 +1190,8 @@ void SleepActivity::renderSystem6SleepScreen() const {
   // ── Power indicator dot (bottom-right corner of case, inside border) ──────
   renderer.fillRect(caseX + CASE_W - sc(12), caseY + CASE_H - sc(12), sc(5), sc(5));
 
-  // ── Step 5: sync mark and refresh ─────────────────────────────────────────
-  drawSyncMarkIfNeeded(renderer);
+  // ── Step 5: refresh ───────────────────────────────────────────────────────
+  // The sync indicator is drawn inside the Mac menu bar above; the floating
+  // corner mark would break the full-bleed frame, so it is intentionally omitted.
   renderer.displayBuffer(HalDisplay::HALF_REFRESH);
 }
