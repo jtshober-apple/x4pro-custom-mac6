@@ -220,19 +220,6 @@ void System6Theme::drawHeaderWithRightReserve(const GfxRenderer& r, Rect rect, c
     r.drawRect(x + 9, y + 13, 14, 14);
   }
 
-  // On the home screen, show the clock as a small framed desk-accessory box
-  // just below the menu bar in the top-right corner of the desktop area.
-  if (home && showClock) {
-    constexpr int kPadX = 8;
-    constexpr int kPadY = 4;
-    const int clockW = r.getTextWidth(statusFont, timeText) + kPadX * 2;
-    const int clockH = r.getLineHeight(statusFont) + kPadY * 2;
-    const int clockBoxX = end - clockW - 4;
-    const int clockBoxY = y + h + 5;
-    r.fillRect(clockBoxX, clockBoxY, clockW, clockH, false);
-    r.drawRect(clockBoxX, clockBoxY, clockW, clockH);
-    r.drawText(statusFont, clockBoxX + kPadX, clockBoxY + kPadY, timeText);
-  }
 }
 
 void System6Theme::drawButtonHints(GfxRenderer& r, const char* btn1, const char* btn2, const char* btn3,
@@ -447,4 +434,30 @@ void System6Theme::drawRecentBookCover(GfxRenderer& r, Rect rect, const std::vec
                EpdFontFamily::BOLD);
   }
   // Touch target for the book cover is registered by the activity layer.
+}
+
+void System6Theme::drawHomeGap(GfxRenderer& r, Rect gapRect) const {
+  // Draw a Mac-style clock desk accessory centered in the gray desktop gap
+  // between the book cover tile and the menu box.
+  if (gapRect.height < 24 || gapRect.width < 60) return;
+
+  char timeText[9] = {};
+  const bool showClock =
+      halClock.isAvailable() &&
+      halClock.formatTime(timeText, sizeof(timeText), SETTINGS.clockUtcOffsetQ, SETTINGS.clockFormat == 1);
+  if (!showClock) return;
+
+  constexpr int statusFont = SMALL_FONT_ID;
+  constexpr int kPadX = 10;
+  constexpr int kPadY = 5;
+  const int clockW = r.getTextWidth(statusFont, timeText) + kPadX * 2;
+  const int clockH = r.getLineHeight(statusFont) + kPadY * 2;
+
+  // Center the widget in the gap both horizontally and vertically.
+  const int clockBoxX = gapRect.x + (gapRect.width - clockW) / 2;
+  const int clockBoxY = gapRect.y + (gapRect.height - clockH) / 2;
+
+  // Mac double-frame with drop shadow (same style as menu and book tile).
+  frame(r, Rect{clockBoxX, clockBoxY, clockW, clockH});
+  r.drawText(statusFont, clockBoxX + kPadX, clockBoxY + kPadY, timeText);
 }

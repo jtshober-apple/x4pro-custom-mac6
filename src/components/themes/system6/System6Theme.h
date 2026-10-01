@@ -11,6 +11,7 @@ constexpr ThemeMetrics makeValues() {
   v.homeTopPadding = 58;
   v.homeCoverHeight = 180;
   v.homeCoverTileHeight = 210;
+  v.homeMenuTopOffset = 48;  // room for the clock desk accessory
   v.menuRowHeight = 56;
   v.menuSpacing = 8;
   v.listInset = 12;
@@ -45,5 +46,6 @@ class System6Theme final : public BaseTheme {
   void drawRecentBookCover(GfxRenderer& renderer, Rect rect, const std::vector<RecentBook>& recentBooks,
                            int selectorIndex, bool& coverRendered, bool& coverBufferStored, bool& bufferRestored,
                            std::function<bool()> storeCoverBuffer) const override;
+  void drawHomeGap(GfxRenderer& renderer, Rect gapRect) const override;
 };
 static_assert(sizeof(System6Theme) == sizeof(BaseTheme), "Theme must not add resident state");

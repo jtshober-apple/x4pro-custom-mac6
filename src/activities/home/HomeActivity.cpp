@@ -311,6 +311,12 @@ void HomeActivity::render(RenderLock&&) {
                           recentBooks, selectorIndex, coverRendered, coverBufferStored, bufferRestored,
                           std::bind(&HomeActivity::storeCoverBuffer, this));
 
+  // Gap between the cover tile and the menu box — the System 6 theme draws a
+  // clock desk accessory here; other themes leave it as a no-op.
+  GUI.drawHomeGap(renderer,
+                  Rect{0, metrics.homeTopPadding + metrics.homeCoverTileHeight,
+                       pageWidth, metrics.homeMenuTopOffset});
+
   // Build menu items dynamically
   std::vector<const char*> menuItems = {tr(STR_BROWSE_FILES), tr(STR_MENU_RECENT_BOOKS), tr(STR_FILE_TRANSFER),
                                         tr(STR_SETTINGS_TITLE)};

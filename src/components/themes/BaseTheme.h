@@ -246,6 +246,10 @@ class BaseTheme {
   virtual void drawRecentBookCover(GfxRenderer& renderer, Rect rect, const std::vector<RecentBook>& recentBooks,
                                    const int selectorIndex, bool& coverRendered, bool& coverBufferStored,
                                    bool& bufferRestored, std::function<bool()> storeCoverBuffer) const;
+  // Optional gap between the cover tile and the menu box (home screen only).
+  // Themes that want to draw something there (e.g. a clock desk accessory) override
+  // this; the base implementation is a no-op so other themes are unaffected.
+  virtual void drawHomeGap(GfxRenderer& renderer, Rect gapRect) const { (void)renderer; (void)gapRect; }
   virtual void drawButtonMenu(GfxRenderer& renderer, Rect rect, int buttonCount, int selectedIndex,
                               const std::function<std::string(int index)>& buttonLabel,
                               const std::function<UIIcon(int index)>& rowIcon) const;
