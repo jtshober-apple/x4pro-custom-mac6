@@ -64,7 +64,7 @@ void MetadataLookupActivity::doWork() {
   // Guard against low-heap TLS OOM.
   if (heap_caps_get_free_size(MALLOC_CAP_8BIT) < HttpDownloader::MIN_TLS_FREE_HEAP ||
       heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) < HttpDownloader::MIN_TLS_MAX_ALLOC) {
-    LOG_WRN(TAG, "Heap too low for TLS");
+    LOG_ERR(TAG, "Heap too low for TLS");
     state_ = FAILED;
     return;
   }
@@ -96,7 +96,7 @@ void MetadataLookupActivity::doWork() {
       if (Storage.openFileForRead(TAG, jpegTmp, jpegFile) &&
           Storage.openFileForWrite(TAG, coverBmp, bmpFile)) {
         if (!JpegToBmpConverter::jpegFileToBmpStream(jpegFile, bmpFile, /*crop=*/false)) {
-          LOG_WRN(TAG, "Cover conversion failed — keeping without cover");
+          LOG_ERR(TAG, "Cover conversion failed — keeping without cover");
         }
         // Both HalFiles close on destruction.
       }
