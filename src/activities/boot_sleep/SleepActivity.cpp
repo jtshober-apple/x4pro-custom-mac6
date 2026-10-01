@@ -1001,6 +1001,23 @@ void SleepActivity::renderSystem6SleepScreen() const {
   // ── Step 1: clear the screen ──────────────────────────────────────────────
   renderer.clearScreen();
 
+  // ── Custom frame (optional) ───────────────────────────────────────────────
+  // Drop /mac-frame.bmp (480×800) on the SD card root to replace the built-in
+  // programmatic Mac body.  The image must be the full display size with the
+  // screen viewport area left as solid white; the desktop scene renders on top
+  // and naturally fills that region.  When the file is absent the programmatic
+  // case is drawn instead.
+  static constexpr char MAC_FRAME_BMP[] = "/mac-frame.bmp";
+  const bool hasCustomFrame = [&]() -> bool {
+    if (!Storage.exists(MAC_FRAME_BMP)) return false;
+    HalFile f;
+    if (!Storage.openFileForRead("SLP", MAC_FRAME_BMP, f)) return false;
+    Bitmap bmp(f);
+    if (bmp.parseHeaders() != BmpReaderError::Ok) return false;
+    renderer.drawBitmap(bmp, 0, 0, W, H, 0.0f, 0.0f);
+    return true;
+  }();
+
   // ── Step 2: cover image (if any) ─────────────────────────────────────────
   // Try to locate a cover BMP for the current book via RECENT_BOOKS so we
   // avoid loading the entire EPUB again.
@@ -1142,99 +1159,102 @@ void SleepActivity::renderSystem6SleepScreen() const {
     }
   }
 
-  // ── Step 4: monitor case frame ────────────────────────────────────────────
-  // Mask everything outside the case with white.
-  renderer.fillRect(0, 0, caseX, H, false);
-  renderer.fillRect(caseX + CASE_W, 0, W - (caseX + CASE_W), H, false);
-  renderer.fillRect(caseX, 0, CASE_W, caseY, false);
-  renderer.fillRect(caseX, caseY + CASE_H, CASE_W, H - (caseY + CASE_H), false);
+  // ── Step 4: monitor case frame (skipped when a custom frame image is used) ─
+  if (!hasCustomFrame) {
+    // Mask everything outside the case with white.
+    renderer.fillRect(0, 0, caseX, H, false);
+    renderer.fillRect(caseX + CASE_W, 0, W - (caseX + CASE_W), H, false);
+    renderer.fillRect(caseX, 0, CASE_W, caseY, false);
+    renderer.fillRect(caseX, caseY + CASE_H, CASE_W, H - (caseY + CASE_H), false);
 
-  // Bezel areas (white, mask cover image or desktop outside the glass).
-  renderer.fillRect(caseX, caseY, CASE_W, BEZ_TOP, false);           // top bezel
-  renderer.fillRect(caseX, botY, CASE_W, botH, false);               // bottom section
-  renderer.fillRect(caseX, scrY, BEZ_LR, SCR_H, false);             // left bezel
-  renderer.fillRect(scrX + SCR_W, scrY, BEZ_LR, SCR_H, false);     // right bezel
+    // Bezel areas (white, mask cover image or desktop outside the glass).
+    renderer.fillRect(caseX, caseY, CASE_W, BEZ_TOP, false);           // top bezel
+    renderer.fillRect(caseX, botY, CASE_W, botH, false);               // bottom section
+    renderer.fillRect(caseX, scrY, BEZ_LR, SCR_H, false);             // left bezel
+    renderer.fillRect(scrX + SCR_W, scrY, BEZ_LR, SCR_H, false);     // right bezel
 
-  // Screen surround (double thin border around the glass).
-  renderer.drawRect(scrX - sc(2), scrY - sc(2), SCR_W + sc(4), SCR_H + sc(4));
-  renderer.drawRect(scrX - sc(1), scrY - sc(1), SCR_W + sc(2), SCR_H + sc(2));
+    // Screen surround (double thin border around the glass).
+    renderer.drawRect(scrX - sc(2), scrY - sc(2), SCR_W + sc(4), SCR_H + sc(4));
+    renderer.drawRect(scrX - sc(1), scrY - sc(1), SCR_W + sc(2), SCR_H + sc(2));
 
-  // Outer case border (double-line for thickness).
-  renderer.drawRect(caseX, caseY, CASE_W, CASE_H);
-  renderer.drawRect(caseX + 1, caseY + 1, CASE_W - 2, CASE_H - 2);
+    // Outer case border (double-line for thickness).
+    renderer.drawRect(caseX, caseY, CASE_W, CASE_H);
+    renderer.drawRect(caseX + 1, caseY + 1, CASE_W - 2, CASE_H - 2);
 
-  // Separator between screen bezel and bottom section.
-  renderer.drawLine(caseX + 1, botY, caseX + CASE_W - 2, botY);
+    // Separator between screen bezel and bottom section.
+    renderer.drawLine(caseX + 1, botY, caseX + CASE_W - 2, botY);
 
-  // ── Floppy disk slot (centred in bottom section, ~1/3 down) ──────────────
-  const int FLOP_W = sc(76), FLOP_H = sc(8);
-  const int flopX = caseX + (CASE_W - FLOP_W) / 2;
-  const int flopY = botY + botH / 3 - FLOP_H / 2;
-  renderer.drawRect(flopX, flopY, FLOP_W, FLOP_H);
-  // Eject notch (small inset rectangle on the right end).
-  renderer.drawRect(flopX + FLOP_W - sc(10), flopY + sc(2), sc(6), FLOP_H - sc(4));
+    // ── Floppy disk slot (centred in bottom section, ~1/3 down) ────────────
+    const int FLOP_W = sc(76), FLOP_H = sc(8);
+    const int flopX = caseX + (CASE_W - FLOP_W) / 2;
+    const int flopY = botY + botH / 3 - FLOP_H / 2;
+    renderer.drawRect(flopX, flopY, FLOP_W, FLOP_H);
+    // Eject notch (small inset rectangle on the right end).
+    renderer.drawRect(flopX + FLOP_W - sc(10), flopY + sc(2), sc(6), FLOP_H - sc(4));
 
-  // ── Speaker grille (left side of bottom section: 3 columns × 6 rows) ────
-  const int spkX = caseX + sc(14);
-  const int spkY = botY + sc(12);
-  for (int row = 0; row < 6; ++row)
-    for (int col = 0; col < 3; ++col)
-      renderer.fillRect(spkX + col * sc(6), spkY + row * sc(7), sc(3), sc(4));
+    // ── Speaker grille (left side of bottom section: 3 columns × 6 rows) ──
+    const int spkX = caseX + sc(14);
+    const int spkY = botY + sc(12);
+    for (int row = 0; row < 6; ++row)
+      for (int col = 0; col < 3; ++col)
+        renderer.fillRect(spkX + col * sc(6), spkY + row * sc(7), sc(3), sc(4));
 
-  // ── "Macintosh" wordmark (centred below floppy slot) ─────────────────────
-  const int logoY = flopY + FLOP_H + sc(6);
-  const int logoX = caseX + (CASE_W - renderer.getTextWidth(SMALL_FONT_ID, "Macintosh")) / 2;
-  renderer.drawText(SMALL_FONT_ID, logoX, logoY, "Macintosh");
+    // ── "Macintosh" wordmark (centred below floppy slot) ───────────────────
+    const int logoY = flopY + FLOP_H + sc(6);
+    const int logoX = caseX + (CASE_W - renderer.getTextWidth(SMALL_FONT_ID, "Macintosh")) / 2;
+    renderer.drawText(SMALL_FONT_ID, logoX, logoY, "Macintosh");
 
-  // ── Power indicator dot (bottom-right corner of case, inside border) ──────
-  renderer.fillRect(caseX + CASE_W - sc(12), caseY + CASE_H - sc(12), sc(5), sc(5));
+    // ── Power indicator dot (bottom-right corner of case, inside border) ────
+    renderer.fillRect(caseX + CASE_W - sc(12), caseY + CASE_H - sc(12), sc(5), sc(5));
 
-  // ── Wear and texture ──────────────────────────────────────────────────────
-  // Screen recess: 1-px shadow on the left and top inner edges of the bezel
-  // opening, suggesting the screen glass is set back into the plastic.
-  renderer.drawLine(scrX - 1, scrY,     scrX - 1, scrY + SCR_H - 1, true);  // left
-  renderer.drawLine(scrX,     scrY - 1, scrX + SCR_W - 1, scrY - 1, true);  // top
+    // ── Wear and texture ────────────────────────────────────────────────────
+    // Screen recess: 1-px shadow on the left and top inner edges of the bezel
+    // opening, suggesting the screen glass is set back into the plastic.
+    renderer.drawLine(scrX - 1, scrY,     scrX - 1, scrY + SCR_H - 1, true);  // left
+    renderer.drawLine(scrX,     scrY - 1, scrX + SCR_W - 1, scrY - 1, true);  // top
 
-  // Scuff marks: short horizontal strokes on the bottom bezel body.
-  // Placed clear of the speaker grille (left edge) and floppy/wordmark (centre).
-  // Each mark is 2 px tall — second row shorter for a natural taper.
-  const struct { int x, y, w; } kScuffs[] = {
-      { sc(19),  sv(28), sc(9)  },   // left, above grille
-      { sc(23),  sv(58), sc(5)  },   // left, mid
-      { sc(240), sv(20), sc(10) },   // right, upper
-      { sc(244), sv(52), sc(6)  },   // right, mid
-      { sc(195), sv(82), sc(7)  },   // lower centre-right
-      { sc(88),  sv(88), sc(5)  },   // lower centre-left
-  };
-  for (const auto& s : kScuffs) {
-      renderer.fillRect(caseX + s.x,     botY + s.y,     s.w,     1, true);
-      renderer.fillRect(caseX + s.x + 1, botY + s.y + 1, s.w - 2, 1, true);
+    // Scuff marks: short horizontal strokes on the bottom bezel body.
+    // Placed clear of the speaker grille (left edge) and floppy/wordmark (centre).
+    // Each mark is 2 px tall — second row shorter for a natural taper.
+    const struct { int x, y, w; } kScuffs[] = {
+        { sc(19),  sv(28), sc(9)  },   // left, above grille
+        { sc(23),  sv(58), sc(5)  },   // left, mid
+        { sc(240), sv(20), sc(10) },   // right, upper
+        { sc(244), sv(52), sc(6)  },   // right, mid
+        { sc(195), sv(82), sc(7)  },   // lower centre-right
+        { sc(88),  sv(88), sc(5)  },   // lower centre-left
+    };
+    for (const auto& s : kScuffs) {
+        renderer.fillRect(caseX + s.x,     botY + s.y,     s.w,     1, true);
+        renderer.fillRect(caseX + s.x + 1, botY + s.y + 1, s.w - 2, 1, true);
+    }
   }
 
-  // ── Step 5: refresh (4-level grayscale) ──────────────────────────────────
-  // BW base carries all the crisp black/white elements drawn above.
-  // The MSB plane then tints every case-body surface from pure white to light
-  // grey, giving the warm beige-to-grey translation on the 4-level panel.
-  // Must stay HALF: the grey-nudge LUT is calibrated against the HALF waveform.
-  renderer.displayGrayscaleBase(HalDisplay::HALF_REFRESH);
+  // ── Step 5: refresh ───────────────────────────────────────────────────────
+  if (hasCustomFrame) {
+    // Custom frame: the image already carries its own aesthetic; plain BW refresh.
+    renderer.displayBuffer(HalDisplay::HALF_REFRESH);
+  } else {
+    // Built-in frame: 4-level grayscale tints the case body from pure white to
+    // light grey (warm beige translation on the X4 Pro panel).
+    // Must stay HALF: the grey-nudge LUT is calibrated against HALF waveform.
+    renderer.displayGrayscaleBase(HalDisplay::HALF_REFRESH);
 
-  // LSB plane — dark-grey tier.  Nothing here; leaving LSB = 0 everywhere
-  // keeps the case body in the lighter of the two grey tones.
-  renderer.clearScreen(0x00);
-  renderer.setRenderMode(GfxRenderer::GRAYSCALE_LSB);
-  renderer.copyGrayscaleLsbBuffers();
+    // LSB plane — leave at 0x00 (no dark-grey regions in the case body).
+    renderer.clearScreen(0x00);
+    renderer.setRenderMode(GfxRenderer::GRAYSCALE_LSB);
+    renderer.copyGrayscaleLsbBuffers();
 
-  // MSB plane — mark every case-body region for the light-grey modification.
-  // Pixels that are white in the MSB plane (0xFF) and black in the LSB plane
-  // (0x00) land on the light-grey waveform step in the X3/X4 LUT.
-  renderer.clearScreen(0x00);
-  renderer.setRenderMode(GfxRenderer::GRAYSCALE_MSB);
-  renderer.fillRect(caseX,        caseY, CASE_W, BEZ_TOP, false);  // top bezel
-  renderer.fillRect(caseX,        scrY,  BEZ_LR, SCR_H,   false);  // left bezel
-  renderer.fillRect(scrX + SCR_W, scrY,  BEZ_LR, SCR_H,   false);  // right bezel
-  renderer.fillRect(caseX,        botY,  CASE_W, botH,    false);   // bottom section
-  renderer.copyGrayscaleMsbBuffers();
+    // MSB plane — mark each bezel region so it resolves to the light-grey step.
+    renderer.clearScreen(0x00);
+    renderer.setRenderMode(GfxRenderer::GRAYSCALE_MSB);
+    renderer.fillRect(caseX,        caseY, CASE_W, BEZ_TOP, false);  // top bezel
+    renderer.fillRect(caseX,        scrY,  BEZ_LR, SCR_H,   false);  // left bezel
+    renderer.fillRect(scrX + SCR_W, scrY,  BEZ_LR, SCR_H,   false);  // right bezel
+    renderer.fillRect(caseX,        botY,  CASE_W, botH,    false);   // bottom section
+    renderer.copyGrayscaleMsbBuffers();
 
-  renderer.displayGrayBuffer();
-  renderer.setRenderMode(GfxRenderer::BW);
+    renderer.displayGrayBuffer();
+    renderer.setRenderMode(GfxRenderer::BW);
+  }
 }
