@@ -174,7 +174,9 @@ void System6Theme::drawHeaderWithRightReserve(const GfxRenderer& r, Rect rect, c
   } else {
     std::snprintf(percentageText, sizeof(percentageText), "%u", static_cast<unsigned>(percentage));
   }
-  const int batterySlotWidth = showPercentage ? r.getTextWidth(statusFont, "+100") : 0;
+  // Fixed slot mirrors the Mac icon's 32-px cleared area so the title is
+  // always centred in the bar regardless of digit count or charging state.
+  constexpr int batterySlotWidth = 32;
   const int batterySlotX = statusEnd - 10 - batterySlotWidth;
   int statusLeft = showPercentage ? batterySlotX : statusEnd;
 
@@ -447,9 +449,9 @@ void System6Theme::drawHomeGap(GfxRenderer& r, Rect gapRect) const {
       halClock.formatTime(timeText, sizeof(timeText), SETTINGS.clockUtcOffsetQ, SETTINGS.clockFormat == 1);
   if (!showClock) return;
 
-  constexpr int statusFont = SMALL_FONT_ID;
-  constexpr int kPadX = 10;
-  constexpr int kPadY = 5;
+  constexpr int statusFont = UI_10_FONT_ID;
+  constexpr int kPadX = 12;
+  constexpr int kPadY = 6;
   const int clockW = r.getTextWidth(statusFont, timeText) + kPadX * 2;
   const int clockH = r.getLineHeight(statusFont) + kPadY * 2;
 
