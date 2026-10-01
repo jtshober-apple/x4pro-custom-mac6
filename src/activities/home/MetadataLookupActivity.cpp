@@ -24,7 +24,7 @@ static constexpr const char* TAG = "MLA";
 MetadataLookupActivity::MetadataLookupActivity(GfxRenderer& renderer, MappedInputManager& input,
                                                const std::string& epubPath,
                                                const std::string& titleHint)
-    : UiActivity("MetadataLookup", renderer, input), epubPath_(epubPath), titleHint_(titleHint) {}
+    : Activity("MetadataLookup", renderer, input), epubPath_(epubPath), titleHint_(titleHint) {}
 
 void MetadataLookupActivity::onEnter() {
   Activity::onEnter();

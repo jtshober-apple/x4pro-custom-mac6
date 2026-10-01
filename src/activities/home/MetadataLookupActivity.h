@@ -5,7 +5,7 @@
 #include <string>
 
 #include "MappedInputManager.h"
-#include "UiActivity.h"
+#include "activities/Activity.h"
 
 // Shown immediately after a rename. Connects to OpenLibrary, fetches title,
 // author and cover, writes a sidecar override and converts + saves the cover
@@ -13,7 +13,7 @@
 //
 // Modelled on ClockSyncActivity: requestUpdateAndWait() forces the "Looking
 // up…" screen before the blocking network work begins.
-class MetadataLookupActivity : public UiActivity {
+class MetadataLookupActivity : public Activity {
  public:
   MetadataLookupActivity(GfxRenderer& renderer, MappedInputManager& input,
                          const std::string& epubPath, const std::string& titleHint);
