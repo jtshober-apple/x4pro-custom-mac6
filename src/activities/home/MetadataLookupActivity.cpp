@@ -104,16 +104,23 @@ void MetadataLookupActivity::doWork() {
   // Guard against low-heap TLS OOM.
   if (heap_caps_get_free_size(MALLOC_CAP_8BIT) < HttpDownloader::MIN_TLS_FREE_HEAP ||
       heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) < HttpDownloader::MIN_TLS_MAX_ALLOC) {
-    LOG_ERR(TAG, "Heap too low for TLS");
+    LOG_ERR(TAG, "Heap too low for TLS (free=%d largest=%d)",
+            heap_caps_get_free_size(MALLOC_CAP_8BIT),
+            heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
     state_ = FAILED;
     return;
   }
 
+  LOG_INF(TAG, "Searching OpenLibrary: %s", titleHint_.c_str());
   OpenLibraryResult result;
   if (!OpenLibraryClient::search(titleHint_, result)) {
+    LOG_INF(TAG, "Not found on OpenLibrary");
     state_ = NOT_FOUND;
     return;
   }
+
+  LOG_INF(TAG, "Found: '%s' by '%s' coverId=%d", result.title.c_str(), result.author.c_str(),
+          result.coverId);
 
   // Copy found values into fixed buffers for the render method.
   strncpy(foundTitle_, result.title.c_str(), sizeof(foundTitle_) - 1);
@@ -139,29 +146,41 @@ void MetadataLookupActivity::doWork() {
     const std::string thumbBmp =
         cachePath + "/thumb_" + std::to_string(coverHeight) + ".bmp";
 
+    LOG_INF(TAG, "Cover: coverId=%d h=%d w=%d dst=%s", result.coverId, coverHeight, coverWidth,
+            thumbBmp.c_str());
     Storage.ensureDirectoryExists(cachePath.c_str());
 
     if (OpenLibraryClient::downloadCoverJpeg(result.coverId, jpegTmp)) {
+      LOG_INF(TAG, "JPEG downloaded to %s", jpegTmp.c_str());
       HalFile jpegFile, bmpFile;
       if (Storage.openFileForRead(TAG, jpegTmp, jpegFile) &&
           Storage.openFileForWrite(TAG, thumbBmp, bmpFile)) {
+        LOG_INF(TAG, "Converting JPEG->1-bit BMP");
         if (JpegToBmpConverter::jpegFileTo1BitBmpStreamWithSize(jpegFile, bmpFile,
                                                                  coverWidth, coverHeight)) {
           // Path stored with placeholder so getCoverThumbPath() resolves it for
           // any theme height, not just the one active at lookup time.
           thumbPath = cachePath + "/thumb_[HEIGHT].bmp";
+          LOG_INF(TAG, "Conversion OK thumbPath=%s", thumbPath.c_str());
         } else {
-          LOG_ERR(TAG, "Cover thumb conversion failed — keeping without cover");
+          LOG_ERR(TAG, "1-bit BMP conversion failed");
         }
         // Both HalFiles close on destruction.
+      } else {
+        LOG_ERR(TAG, "Failed to open JPEG or BMP file for conversion");
       }
       // Remove temp jpeg regardless of conversion outcome.
       Storage.remove(jpegTmp.c_str());
+    } else {
+      LOG_ERR(TAG, "JPEG download failed for coverId=%d", result.coverId);
     }
+  } else {
+    LOG_INF(TAG, "No cover on OpenLibrary (coverId=0)");
   }
 
   // Update RecentBooks with the fresh title, author, and thumb path so the
   // home screen shows the new values immediately (before the next book open).
+  LOG_INF(TAG, "updateBook thumbPath='%s'", thumbPath.c_str());
   RECENT_BOOKS.updateBook(epubPath_, result.title, result.author, thumbPath);
 
   state_ = SUCCESS;

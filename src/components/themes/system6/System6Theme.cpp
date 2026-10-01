@@ -161,31 +161,29 @@ void System6Theme::drawHeaderWithRightReserve(const GfxRenderer& r, Rect rect, c
   constexpr int statusFont = SMALL_FONT_ID;
   const int statusTextY = y + (h - r.getLineHeight(statusFont)) / 2;
 
-  // Battery: bare number only (no icon, no % sign), bold when charging.
-  // A fixed slot sized for "100" keeps layout stable as the digit count changes.
+  // Battery: bare number only (no icon, no % sign). A "+" prefix when charging
+  // is the clearest cue on 1-bit e-ink where bold weight is not distinguishable.
+  // Slot is always sized for "+100" so the layout never shifts between states.
   const bool showPercentage =
       SETTINGS.hideBatteryPercentage != CrossPointSettings::HIDE_BATTERY_PERCENTAGE::HIDE_ALWAYS;
   const uint16_t percentage = powerManager.getBatteryPercentage();
   const bool charging = gpio.isUsbConnected();
-  const EpdFontFamily::Style batteryStyle = charging ? EpdFontFamily::BOLD : EpdFontFamily::REGULAR;
-  char percentageText[5] = {};
-  std::snprintf(percentageText, sizeof(percentageText), "%u", static_cast<unsigned>(percentage));
-  // Reserve width of "100" in bold so the slot never shifts as the number changes.
-  const int batterySlotWidth =
-      showPercentage ? r.getTextWidth(statusFont, "100", EpdFontFamily::BOLD) : 0;
+  char percentageText[6] = {};
+  if (charging) {
+    std::snprintf(percentageText, sizeof(percentageText), "+%u", static_cast<unsigned>(percentage));
+  } else {
+    std::snprintf(percentageText, sizeof(percentageText), "%u", static_cast<unsigned>(percentage));
+  }
+  const int batterySlotWidth = showPercentage ? r.getTextWidth(statusFont, "+100") : 0;
   const int batterySlotX = statusEnd - 10 - batterySlotWidth;
   int statusLeft = showPercentage ? batterySlotX : statusEnd;
 
+  // Clock is not in the menu bar — it lives as a desk accessory below the title
+  // bar on the home screen, keeping the bar clean: [mac][stripes]title[stripes][%].
   char timeText[9] = {};
   const bool showClock =
       halClock.isAvailable() &&
       halClock.formatTime(timeText, sizeof(timeText), SETTINGS.clockUtcOffsetQ, SETTINGS.clockFormat == 1);
-  int clockX = statusLeft;
-  if (showClock) {
-    const int clockWidth = r.getTextWidth(statusFont, timeText);
-    clockX = statusLeft - 10 - clockWidth;
-    statusLeft = clockX;
-  }
 
   int subtitleX = statusLeft;
   char clippedSubtitle[160] = {};
@@ -197,16 +195,10 @@ void System6Theme::drawHeaderWithRightReserve(const GfxRenderer& r, Rect rect, c
 
   r.fillRect(statusLeft - 6, y + 3, statusEnd - statusLeft + 6, h - 6, false);
   if (!home && subtitle && subtitle[0]) r.drawText(statusFont, subtitleX, statusTextY, clippedSubtitle);
-  if (showClock) r.drawText(statusFont, clockX, statusTextY, timeText);
-  if (showClock && showPercentage) {
-    const int dividerX = batterySlotX - 6;
-    r.drawLine(dividerX, y + 8, dividerX, y + h - 9);
-  }
   if (showPercentage) {
-    // Centre the actual digit(s) inside the fixed slot.
-    const int actualWidth = r.getTextWidth(statusFont, percentageText, batteryStyle);
+    const int actualWidth = r.getTextWidth(statusFont, percentageText);
     const int centeredX = batterySlotX + (batterySlotWidth - actualWidth) / 2;
-    r.drawText(statusFont, centeredX, statusTextY, percentageText, true, batteryStyle);
+    r.drawText(statusFont, centeredX, statusTextY, percentageText);
   }
 
   const int font = uiScaleSpec().bodyFontId;
@@ -226,6 +218,20 @@ void System6Theme::drawHeaderWithRightReserve(const GfxRenderer& r, Rect rect, c
     // TouchHeaderBackButton uses this window box as its Back affordance.
     r.fillRect(x + 9, y + 13, 14, 14, false);
     r.drawRect(x + 9, y + 13, 14, 14);
+  }
+
+  // On the home screen, show the clock as a small framed desk-accessory box
+  // just below the menu bar in the top-right corner of the desktop area.
+  if (home && showClock) {
+    constexpr int kPadX = 8;
+    constexpr int kPadY = 4;
+    const int clockW = r.getTextWidth(statusFont, timeText) + kPadX * 2;
+    const int clockH = r.getLineHeight(statusFont) + kPadY * 2;
+    const int clockBoxX = end - clockW - 4;
+    const int clockBoxY = y + h + 5;
+    r.fillRect(clockBoxX, clockBoxY, clockW, clockH, false);
+    r.drawRect(clockBoxX, clockBoxY, clockW, clockH);
+    r.drawText(statusFont, clockBoxX + kPadX, clockBoxY + kPadY, timeText);
   }
 }
 
