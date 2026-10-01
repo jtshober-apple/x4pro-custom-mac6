@@ -123,20 +123,35 @@ void MetadataLookupActivity::doWork() {
   // the next Epub::load() bakes the new metadata in permanently.
   MetadataOverride::save(epubPath_, result.title, result.author);
 
-  // Download and convert the cover if one is available.
+  // Download and convert the cover to a 1-bit BMP thumbnail sized for the
+  // current theme.  HomeActivity calls UITheme::getCoverThumbPath() which
+  // replaces the "[HEIGHT]" token with the live homeCoverHeight value, so the
+  // stored path must use that token to remain valid across theme switches.
+  const std::string cachePath = MetadataOverride::getCachePath(epubPath_);
+  std::string thumbPath;
+
   if (result.coverId > 0) {
-    const std::string cachePath = MetadataOverride::getCachePath(epubPath_);
     const std::string jpegTmp = cachePath + "/cover_tmp.jpg";
-    const std::string coverBmp = cachePath + "/cover.bmp";
+
+    // Match the dimensions the home screen will request.
+    const int coverHeight = UITheme::getInstance().getMetrics().homeCoverHeight;
+    const int coverWidth = static_cast<int>(coverHeight * 0.6f);
+    const std::string thumbBmp =
+        cachePath + "/thumb_" + std::to_string(coverHeight) + ".bmp";
 
     Storage.ensureDirectoryExists(cachePath.c_str());
 
     if (OpenLibraryClient::downloadCoverJpeg(result.coverId, jpegTmp)) {
       HalFile jpegFile, bmpFile;
       if (Storage.openFileForRead(TAG, jpegTmp, jpegFile) &&
-          Storage.openFileForWrite(TAG, coverBmp, bmpFile)) {
-        if (!JpegToBmpConverter::jpegFileToBmpStream(jpegFile, bmpFile, /*crop=*/false)) {
-          LOG_ERR(TAG, "Cover conversion failed — keeping without cover");
+          Storage.openFileForWrite(TAG, thumbBmp, bmpFile)) {
+        if (JpegToBmpConverter::jpegFileTo1BitBmpStreamWithSize(jpegFile, bmpFile,
+                                                                 coverWidth, coverHeight)) {
+          // Path stored with placeholder so getCoverThumbPath() resolves it for
+          // any theme height, not just the one active at lookup time.
+          thumbPath = cachePath + "/thumb_[HEIGHT].bmp";
+        } else {
+          LOG_ERR(TAG, "Cover thumb conversion failed — keeping without cover");
         }
         // Both HalFiles close on destruction.
       }
@@ -145,11 +160,9 @@ void MetadataLookupActivity::doWork() {
     }
   }
 
-  // Update RecentBooks with the fresh title, author, and cover path so the
+  // Update RecentBooks with the fresh title, author, and thumb path so the
   // home screen shows the new values immediately (before the next book open).
-  const std::string coverBmpPath =
-      result.coverId > 0 ? MetadataOverride::getCoverBmpPath(epubPath_) : std::string();
-  RECENT_BOOKS.updateBook(epubPath_, result.title, result.author, coverBmpPath);
+  RECENT_BOOKS.updateBook(epubPath_, result.title, result.author, thumbPath);
 
   state_ = SUCCESS;
 }
