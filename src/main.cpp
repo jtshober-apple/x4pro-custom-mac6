@@ -431,6 +431,7 @@ void setup() {
   // reboots preserve the live state so they do not unexpectedly go dark.
   const bool restoreLightOn = SETTINGS.frontlightOn != 0 && (SETTINGS.frontlightRestoreOnWake != 0 || isSilentReboot);
   Frontlight.begin(SETTINGS.frontlightBrightness, SETTINGS.frontlightWarmth, restoreLightOn);
+  halClock.begin();
 
   switch (wakeupReason) {
     case HalGPIO::WakeupReason::PowerButton:

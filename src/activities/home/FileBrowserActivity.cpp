@@ -296,18 +296,19 @@ void FileBrowserActivity::onRowLongPress(const int index) {
             return;
           }
 
-          // After a successful rename, update the home-screen RecentBooks title
-          // so the new filename appears immediately without reopening the book.
-          // We seed the title from the new filename; real metadata (epub title or
-          // a network lookup) will overwrite this the next time the book is opened.
+          // After a successful rename, repoint the RecentBooks entry to the new
+          // path and update the title from the new filename. The cover cache is
+          // keyed on the old path's hash so it is now stale; clear it and let
+          // loadRecentCovers regenerate it on the next home-screen visit.
           if (!ctx->isDirectory) {
             const std::string newTitle = titleFromFilename(newName);
-            // updateBook(path, title, author, coverBmpPath):
-            // Passing "" for author/cover preserves any cached values on some
-            // implementations; if your RecentBooksStore clears them on "", use
-            // existing book fields from RECENT_BOOKS.getBooks() instead.
-            RECENT_BOOKS.updateBook(ctx->fullOldPath, newTitle, "", "");
+            const auto& books = RECENT_BOOKS.getBooks();
+            const auto it = std::find_if(books.begin(), books.end(),
+                                         [&](const RecentBook& b) { return b.path == ctx->fullOldPath; });
+            const std::string existingAuthor = (it != books.end()) ? it->author : "";
             clearBookCache(ctx->fullOldPath);
+            RECENT_BOOKS.updatePath(ctx->fullOldPath, fullNewPath, "", "");
+            RECENT_BOOKS.updateBook(fullNewPath, newTitle, existingAuthor, "");
           }
 
           {

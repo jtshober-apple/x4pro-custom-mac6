@@ -9,13 +9,43 @@ HalClock halClock;  // Singleton instance
 
 void HalClock::begin() {
   _available = _sdkRtc.begin();
-  LOG_INF("CLK", _available ? "SDK RTC found" : "RTC not found");
+  if (_available) {
+    LOG_INF("CLK", "External RTC (DS3231) found");
+    return;
+  }
+  // Fall back to the ESP32 internal RTC backed by the system clock (SNTP).
+  // Time is meaningful only after the first NTP sync; getTime() returns false
+  // until then by checking against MIN_VALID_TIME.
+  _useInternalRtc = true;
+  _available = true;
+  LOG_INF("CLK", "No external RTC; using internal RTC (requires NTP sync)");
 }
 
 bool HalClock::getTime(uint8_t& hour, uint8_t& minute) const {
   if (!_available) return false;
 
   const unsigned long now = millis();
+
+  if (_useInternalRtc) {
+    // Throttle system-clock reads the same as the external chip.
+    if (_hasCachedTime && _lastPollMs != 0 && (now - _lastPollMs) < CLOCK_POLL_MS) {
+      hour = _cachedHour;
+      minute = _cachedMinute;
+      return true;
+    }
+    const time_t t = time(nullptr);
+    if (t < MIN_VALID_TIME) return false;  // Clock not yet synced
+    struct tm ti;
+    gmtime_r(&t, &ti);
+    _cachedHour = static_cast<uint8_t>(ti.tm_hour);
+    _cachedMinute = static_cast<uint8_t>(ti.tm_min);
+    _lastPollMs = now;
+    _hasCachedTime = true;
+    hour = _cachedHour;
+    minute = _cachedMinute;
+    return true;
+  }
+
   if (_lastPollMs != 0 && (now - _lastPollMs) < CLOCK_POLL_MS) {
     hour = _cachedHour;
     minute = _cachedMinute;
@@ -84,6 +114,18 @@ bool HalClock::syncFromNTP() {
       time_t now = time(nullptr);
       struct tm timeinfo;
       gmtime_r(&now, &timeinfo);
+
+      if (_useInternalRtc) {
+        // The SNTP stack already updated the system clock via settimeofday().
+        // Just refresh our cached values.
+        _cachedHour = static_cast<uint8_t>(timeinfo.tm_hour);
+        _cachedMinute = static_cast<uint8_t>(timeinfo.tm_min);
+        _hasCachedTime = true;
+        _lastPollMs = 0;  // Force a fresh read next getTime() call
+        LOG_INF("CLK", "System clock set to %04d-%02d-%02d %02d:%02u:%02d UTC", timeinfo.tm_year + 1900,
+                timeinfo.tm_mon + 1, timeinfo.tm_mday, timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
+        return true;
+      }
 
       Rtc::DateTime dt;
       dt.year = static_cast<uint16_t>(timeinfo.tm_year + 1900);

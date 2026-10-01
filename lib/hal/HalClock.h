@@ -8,13 +8,15 @@ extern HalClock halClock;  // Singleton
 
 class HalClock {
   bool _available = false;
+  bool _useInternalRtc = false;  // true when no external DS3231 — uses ESP32 system clock via SNTP
   mutable Rtc _sdkRtc;
   mutable uint8_t _cachedHour = 0;
   mutable uint8_t _cachedMinute = 0;
   mutable bool _hasCachedTime = false;
   mutable unsigned long _lastPollMs = 0;
 
-  static constexpr unsigned long CLOCK_POLL_MS = 10000;  // 10 seconds
+  static constexpr unsigned long CLOCK_POLL_MS = 10000;   // 10 seconds
+  static constexpr time_t MIN_VALID_TIME = 1577836800LL;  // 2020-01-01 UTC; below this the system clock is unset
 
  public:
   // Call after BoardConfig has selected the active device.
