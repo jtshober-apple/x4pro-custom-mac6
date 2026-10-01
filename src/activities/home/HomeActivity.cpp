@@ -261,9 +261,7 @@ void HomeActivity::loop() {
   // First-row Y from the theme: themes that center the menu box vertically
   // report where their first row actually lands so the touch grid stays aligned.
   const Rect menuRect{0, menuTop, renderer.getScreenWidth(),
-                      renderer.getScreenHeight() -
-                          (metrics.headerHeight + metrics.homeTopPadding + metrics.verticalSpacing +
-                           metrics.homeMenuTopOffset + metrics.buttonHintsHeight)};
+                      renderer.getScreenHeight() - metrics.buttonHintsHeight - menuTop};
   const int menuFirstRowY = GUI.getMenuFirstRowY(menuRect, renderedMenuCount);
   const auto menuTouch = mappedInput.rowTouch(menuRow, menuFirstRowY, menuRowHeight + metrics.menuSpacing,
                                               renderedMenuCount, 0, INT32_MAX, menuRowHeight);
@@ -332,8 +330,8 @@ void HomeActivity::render(RenderLock&&) {
   GUI.drawButtonMenu(
       renderer,
       Rect{0, metrics.homeTopPadding + metrics.homeCoverTileHeight + metrics.homeMenuTopOffset, pageWidth,
-           pageHeight - (metrics.headerHeight + metrics.homeTopPadding + metrics.verticalSpacing +
-                         metrics.homeMenuTopOffset + metrics.buttonHintsHeight)},
+           pageHeight - metrics.buttonHintsHeight -
+               (metrics.homeTopPadding + metrics.homeCoverTileHeight + metrics.homeMenuTopOffset)},
       static_cast<int>(menuItems.size()),
       metrics.homeContinueReadingInMenu ? selectorIndex : selectorIndex - recentBooks.size(),
       [&menuItems](int index) { return std::string(menuItems[index]); },
