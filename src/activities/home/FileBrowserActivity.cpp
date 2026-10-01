@@ -345,18 +345,22 @@ void FileBrowserActivity::onRowLongPress(const int index) {
         });
   };
 
-  // Show a two-option context menu: Edit Name / Delete.
+  // Show a two-option context menu: Rename / Delete.
+  // onChoice fires while ContextMenuActivity is still finishing itself, so we
+  // only record the choice there and do the actual launch in the outer result
+  // handler, which fires after the context menu has fully closed and
+  // FileBrowserActivity is the active activity again.
+  auto pendingChoice = std::make_shared<int>(-1);
   startActivityForResult(
       std::make_unique<ContextMenuActivity>(
           renderer, mappedInput,
-          currentName,                                    // heading = the filename being acted on
+          currentName,
           std::vector<std::string>{tr(STR_RENAME), tr(STR_DELETE)},
-          [launchRename, launchDelete](int choice) {
-            if (choice == 0) launchRename();
-            else if (choice == 1) launchDelete();
-            // choice == -1 (cancelled): do nothing
-          }),
-      [](const ActivityResult&) {});  // result handled by the onChoice callback above
+          [pendingChoice](int choice) { *pendingChoice = choice; }),
+      [this, pendingChoice, launchRename, launchDelete](const ActivityResult&) {
+        if (*pendingChoice == 0) launchRename();
+        else if (*pendingChoice == 1) launchDelete();
+      });
 }
 
 void FileBrowserActivity::activateSelected(const bool forceDelete) {

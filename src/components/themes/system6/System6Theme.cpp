@@ -322,6 +322,17 @@ void System6Theme::fillPopupProgress(const GfxRenderer& r, const Rect& layout, c
   r.displayBuffer(HalDisplay::FAST_REFRESH);
 }
 
+int System6Theme::getMenuFirstRowY(Rect rect, int buttonCount) const {
+  const auto& m = System6Metrics::values;
+  const int step = m.menuRowHeight + m.menuSpacing;
+  const int rows = std::min(7, (rect.height - 44) / step);
+  if (rows <= 0) return rect.y + 37;
+  const int visible = std::min(rows, std::max(1, buttonCount));
+  const int menuBoxH = visible * step + 40;
+  const int menuY = rect.y + std::max(2, (rect.height - menuBoxH) / 2);
+  return menuY + 37;
+}
+
 void System6Theme::drawButtonMenu(GfxRenderer& r, Rect rect, int count, int selected,
                                   const std::function<std::string(int)>& buttonLabel,
                                   const std::function<UIIcon(int)>& rowIcon) const {
@@ -333,16 +344,18 @@ void System6Theme::drawButtonMenu(GfxRenderer& r, Rect rect, int count, int sele
   const int visible = std::min(rows, count - start);
   const int x = rect.x + 14;
   const int width = rect.width - 32;
-  frame(r, Rect{x, rect.y + 2, width, visible * step + 40});
-  for (int dy = 8; dy < 28; dy += 4) r.drawLine(x + 6, rect.y + dy, x + width - 7, rect.y + dy);
+  const int menuBoxH = visible * step + 40;
+  const int menuY = rect.y + std::max(2, (rect.height - menuBoxH) / 2);
+  frame(r, Rect{x, menuY, width, menuBoxH});
+  for (int dy = 6; dy < 26; dy += 4) r.drawLine(x + 6, menuY + dy, x + width - 7, menuY + dy);
   const int titleWidth = r.getTextWidth(UI_10_FONT_ID, tr(STR_MENU));
   const int titleX = x + (width - titleWidth) / 2;
-  r.fillRect(titleX - 8, rect.y + 4, titleWidth + 16, 26, false);
-  r.drawText(UI_10_FONT_ID, titleX, rect.y + 6, tr(STR_MENU));
-  r.drawLine(x + 3, rect.y + 32, x + width - 4, rect.y + 32);
+  r.fillRect(titleX - 8, menuY + 2, titleWidth + 16, 26, false);
+  r.drawText(UI_10_FONT_ID, titleX, menuY + 4, tr(STR_MENU));
+  r.drawLine(x + 3, menuY + 30, x + width - 4, menuY + 30);
   for (int n = 0; n < visible; ++n) {
     const int i = start + n;
-    const int y = rect.y + 39 + n * step;
+    const int y = menuY + 37 + n * step;
     const bool active = i == selected;
     if (active) r.fillRect(x + 5, y, width - 10, m.menuRowHeight);
     menuIcon(r, rowIcon ? rowIcon(i) : File, x + 12, y + 9, !active);
@@ -353,11 +366,11 @@ void System6Theme::drawButtonMenu(GfxRenderer& r, Rect rect, int count, int sele
     // Touch targets for menu rows are registered by the activity layer.
   }
   if (start > 0) {
-    r.drawLine(x + width - 18, rect.y + 46, x + width - 14, rect.y + 42);
-    r.drawLine(x + width - 14, rect.y + 42, x + width - 10, rect.y + 46);
+    r.drawLine(x + width - 18, menuY + 44, x + width - 14, menuY + 40);
+    r.drawLine(x + width - 14, menuY + 40, x + width - 10, menuY + 44);
   }
   if (start + visible < count) {
-    const int y = rect.y + 32 + visible * step;
+    const int y = menuY + 30 + visible * step;
     r.drawLine(x + width - 18, y - 4, x + width - 14, y);
     r.drawLine(x + width - 14, y, x + width - 10, y - 4);
   }

@@ -34,6 +34,7 @@ class System6Theme final : public BaseTheme {
                   const char* subtitle = nullptr) const override;
   void drawHeaderWithRightReserve(const GfxRenderer& renderer, Rect rect, const char* title, const char* subtitle,
                                   int rightReserve) const;
+  int getMenuFirstRowY(Rect rect, int buttonCount) const override;
   void drawButtonHints(GfxRenderer& renderer, const char* btn1, const char* btn2, const char* btn3,
                        const char* btn4) const override;
   void drawButtonMenu(GfxRenderer& renderer, Rect rect, int buttonCount, int selectedIndex,

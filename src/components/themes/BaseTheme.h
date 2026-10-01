@@ -235,6 +235,10 @@ class BaseTheme {
   // grid from this, so hit bands always match the visuals (RoundedRaff derives
   // its row height from the font, not the metrics table).
   virtual int getMenuRowHeight(const GfxRenderer& renderer) const;
+  // Y coordinate of the first drawn row inside the rect passed to drawButtonMenu.
+  // HomeActivity aligns its rowTouch grid to this value so touch targets match
+  // the visuals even when the theme centers the menu box vertically.
+  virtual int getMenuFirstRowY(Rect rect, int buttonCount) const;
   virtual void drawHeader(const GfxRenderer& renderer, Rect rect, const char* title,
                           const char* subtitle = nullptr) const;
   virtual void drawSubHeader(const GfxRenderer& renderer, Rect rect, const char* label,
