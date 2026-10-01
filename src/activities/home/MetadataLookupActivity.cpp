@@ -12,6 +12,8 @@
 #include <cstring>
 #include <string>
 
+#include <Memory.h>
+
 #include "RecentBooksStore.h"
 #include "SilentRestart.h"
 #include "activities/network/WifiSelectionActivity.h"
