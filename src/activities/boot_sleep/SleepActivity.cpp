@@ -974,26 +974,23 @@ void SleepActivity::renderSystem6SleepScreen() const {
   const int H = renderer.getScreenHeight();
 
   // ── Monitor geometry ──────────────────────────────────────────────────────
-  // Scale the Mac Plus proportions (296 × 362 reference) to fill the full
-  // display width so every detail is easy to read.
-  // All dimensions are derived from W via integer arithmetic: sc(v) = v * W / 296.
-  auto sc = [W](int v) -> int { return v * W / 296; };
+  // The Mac Plus reference is 296 × 362 px.  The case fills the entire display.
+  // Horizontal dims scale from W/296; vertical dims scale from H/362 so the
+  // screen glass and bottom section each keep their correct share of the height.
+  auto sc = [W](int v) -> int { return v * W / 296; };  // horizontal
+  auto sv = [H](int v) -> int { return v * H / 362; };  // vertical
 
-  // The outer case fills the entire display — no padding, no centering.
-  // The interior proportions (bezels, screen, bottom section) are still
-  // scaled from W so the Mac Plus ratios are preserved horizontally; the
-  // extra vertical space goes into the bottom section (floppy/speaker area).
   const int CASE_W = W;
   const int CASE_H = H;
   const int caseX  = 0;
   const int caseY  = 0;
 
   // Screen "glass" area inside the bezel.
-  // Left/right bezel: 38/296 of case width; top bezel: 36/296.
+  // Left/right bezel scales with width; top bezel and screen height with height.
   const int BEZ_LR  = sc(38);
-  const int BEZ_TOP = sc(36);
+  const int BEZ_TOP = sv(36);
   const int SCR_W   = CASE_W - BEZ_LR * 2;
-  const int SCR_H   = sc(166);
+  const int SCR_H   = sv(166);
   const int scrX = caseX + BEZ_LR;
   const int scrY = caseY + BEZ_TOP;
 
@@ -1059,10 +1056,12 @@ void SleepActivity::renderSystem6SleepScreen() const {
     renderer.drawText(SMALL_FONT_ID, scrX + sc(3), scrY + sc(2),
                       " \xEF\xA3\xBF  File  Edit  View  Special", /*black=*/false);
     if (KoSyncStatus::isUnsynced()) {
-      const char* syncLabel = "\xe2\x86\x91";  // UTF-8 ↑ (upload arrow)
-      const int slw = renderer.getTextWidth(SMALL_FONT_ID, syncLabel);
-      renderer.drawText(SMALL_FONT_ID, scrX + SCR_W - slw - sc(3), scrY + sc(2),
-                        syncLabel, /*black=*/false);
+      // Draw a small sync-pending dot in the top-right corner of the menu bar.
+      // A filled square is more reliable than any Unicode arrow on the bitmap font.
+      const int dotSize = sv(5);
+      renderer.fillRect(scrX + SCR_W - dotSize - sc(3),
+                        scrY + (MB_H - dotSize) / 2,
+                        dotSize, dotSize, /*black=*/false);
     }
 
     // Desktop checkerboard below the menu bar.
