@@ -1120,30 +1120,10 @@ void SleepActivity::renderSystem6SleepScreen() const {
 
   // ── Step 3: System 6 desktop scene (no cover) ─────────────────────────────
   if (!hasCover) {
-    // ── Menu bar: WHITE background with BLACK text (authentic System 6) ──────
-    const int MB_H = sc(13);
-    renderer.fillRect(scrX, scrY, SCR_W, MB_H, false);  // white fill
-    renderer.fillRect(scrX, scrY + MB_H - 1, SCR_W, 1); // bottom rule (black)
-    renderer.drawText(SMALL_FONT_ID, scrX + sc(3), scrY + sc(2),
-                      " \xEF\xA3\xBF  File  Edit  View  Special", /*black=*/true);
-
-    // Clock on the right, or sync-pending dot.
-    if (KoSyncStatus::isUnsynced()) {
-      const int dotSize = sv(5);
-      renderer.fillRect(scrX + SCR_W - dotSize - sc(3),
-                        scrY + (MB_H - dotSize) / 2,
-                        dotSize, dotSize, /*black=*/true);
-    } else {
-      const char* timeStr = "12:00 AM";
-      const int tw = renderer.getTextWidth(SMALL_FONT_ID, timeStr);
-      renderer.drawText(SMALL_FONT_ID, scrX + SCR_W - tw - sc(4), scrY + sc(2),
-                        timeStr, /*black=*/true);
-    }
-
-    // ── Desktop background: user-supplied image OR programmatic fallback ──────
-    // Drop /.mac-desktop.bmp (exactly SCR_W × SCR_H pixels, 1-bit BMP) on the
-    // SD card root.  It is drawn starting at (scrX, scrY), covering the full
-    // viewport.  When absent, the programmatic scene is drawn instead.
+    // ── Desktop background ────────────────────────────────────────────────────
+    // Drop /.mac-desktop.bmp (SCR_W × SCR_H pixels, 1-bit BMP) on the SD card
+    // root to supply the full desktop image (menu bar, icons, windows — all of
+    // it).  When absent, a plain checkerboard fills the viewport as a fallback.
     static constexpr char MAC_DESKTOP_BMP[] = "/.mac-desktop.bmp";
     const bool hasDesktopImage = [&]() -> bool {
       if (!Storage.exists(MAC_DESKTOP_BMP)) return false;
@@ -1154,89 +1134,10 @@ void SleepActivity::renderSystem6SleepScreen() const {
       renderer.drawBitmap(dbmp, scrX, scrY, SCR_W, SCR_H, 0.0f, 0.0f);
       return true;
     }();
+    if (!hasDesktopImage)
+      mac6Checkerboard(renderer, scrX, scrY, SCR_W, SCR_H);
 
-    if (!hasDesktopImage) {
-      // Programmatic fallback: checkerboard + icons + Control Panel window.
-      mac6Checkerboard(renderer, scrX, scrY + MB_H, SCR_W, SCR_H - MB_H);
-
-      // Floppy disk icon (top-right, "System Tools").
-      const int FLP_W = sc(28), FLP_H = sc(26);
-      const int flpX = scrX + SCR_W - FLP_W - sc(6);
-      const int flpY = scrY + MB_H + sc(6);
-      renderer.fillRect(flpX - sc(2), flpY - sc(2), FLP_W + sc(8), FLP_H + sc(16), false);
-      mac6Floppy(renderer, flpX, flpY);
-      {
-        const char* flpLabel = "System Tools";
-        const int lw = renderer.getTextWidth(SMALL_FONT_ID, flpLabel);
-        renderer.drawText(SMALL_FONT_ID, flpX + (FLP_W - lw) / 2, flpY + FLP_H + 2, flpLabel);
-      }
-
-      // Trash icon (bottom-right).
-      const int TR_W = sc(24), TR_H = sc(28);
-      const int trX = scrX + SCR_W - TR_W - sc(8);
-      const int trY = scrY + SCR_H - TR_H - sc(18);
-      renderer.fillRect(trX - sc(4), trY - sc(2), TR_W + sc(8), TR_H + sc(14), false);
-      mac6Trash(renderer, trX, trY);
-      {
-        const char* trLabel = "Trash";
-        const int lw = renderer.getTextWidth(SMALL_FONT_ID, trLabel);
-        renderer.drawText(SMALL_FONT_ID, trX + (TR_W - lw) / 2, trY + TR_H + 2, trLabel);
-      }
-
-      // Control Panel background window (center).
-      const int CP_W = sc(155), CP_H = sc(120);
-      const int cpX  = scrX + (SCR_W - CP_W) / 2;
-      const int cpY  = scrY + MB_H + sc(8);
-      const int CP_SB = sc(11), CP_TB_H = sc(11);
-      mac6Frame(renderer, cpX, cpY, CP_W, CP_H);
-      renderer.fillRect(cpX + 1, cpY + 1, CP_W - 2, CP_TB_H, false);
-      for (int row = cpY + 1; row < cpY + 1 + CP_TB_H; row += 2)
-        renderer.fillRect(cpX + 1, row, CP_W - 2, 1);
-      renderer.drawRect(cpX + 1,     cpY + sc(2), sc(9), sc(9), false);
-      renderer.drawRect(cpX + sc(2), cpY + sc(3), sc(7), sc(7), false);
-      {
-        const char* cpTitle = "Control Panel";
-        const int tw = renderer.getTextWidth(SMALL_FONT_ID, cpTitle);
-        renderer.drawText(SMALL_FONT_ID, cpX + (CP_W - tw) / 2, cpY + 2, cpTitle, false);
-      }
-      renderer.fillRect(cpX + 1, cpY + CP_TB_H + 1, CP_W - 2, CP_H - CP_TB_H - 2, false);
-      const int CP_SIDE_W = sc(36);
-      renderer.fillRect(cpX + CP_SIDE_W, cpY + CP_TB_H + 1, 1, CP_H - CP_TB_H - 2);
-      const int genX = cpX + sc(7), genY = cpY + CP_TB_H + sc(6);
-      renderer.drawRect(genX, genY, sc(20), sc(20));
-      renderer.drawRect(genX + sc(3), genY + sc(3), sc(14), sc(14), false);
-      renderer.fillRect(genX + sc(6), genY + sc(6), sc(8), sc(8));
-      const int cpSbX = cpX + CP_SIDE_W - CP_SB;
-      const int cpSbTop = cpY + CP_TB_H + 1, cpSbBot = cpY + CP_H - 1 - CP_SB;
-      renderer.drawRect(cpSbX, cpSbTop, CP_SB, CP_SB);
-      renderer.fillRect(cpSbX + 1, cpSbTop + 1, CP_SB - 2, CP_SB - 2, false);
-      { const int cx = cpSbX + CP_SB/2, ty = cpSbTop + 2;
-        renderer.fillRect(cx, ty, 1, 1); renderer.fillRect(cx-1, ty+1, 3, 1);
-        renderer.fillRect(cx-2, ty+2, 5, 1); }
-      mac6Checkerboard(renderer, cpSbX, cpSbTop + CP_SB, CP_SB, cpSbBot - (cpSbTop + CP_SB));
-      renderer.drawRect(cpSbX, cpSbBot, CP_SB, CP_SB);
-      renderer.fillRect(cpSbX + 1, cpSbBot + 1, CP_SB - 2, CP_SB - 2, false);
-      { const int cx = cpSbX + CP_SB/2, ty = cpSbBot + 2;
-        renderer.fillRect(cx-2, ty, 5, 1); renderer.fillRect(cx-1, ty+1, 3, 1);
-        renderer.fillRect(cx, ty+2, 1, 1); }
-      const int cpContX = cpX + CP_SIDE_W + sc(4);
-      renderer.drawText(SMALL_FONT_ID, cpContX, cpY + CP_TB_H + sc(4), "Desktop Pattern");
-      const int pvY = cpY + CP_TB_H + sc(14), pvSz = sc(20);
-      renderer.drawRect(cpContX, pvY, pvSz, pvSz);
-      mac6Checkerboard(renderer, cpContX + 1, pvY + 1, pvSz - 2, pvSz - 2);
-      for (int pi = 0; pi < 4; ++pi) {
-        const int px = cpContX + pvSz + sc(4), py = pvY + pi * (sc(10) + 1);
-        renderer.drawRect(px, py, sc(10), sc(10));
-        if (pi % 2 == 0) mac6Checkerboard(renderer, px+1, py+1, sc(10)-2, sc(10)-2);
-      }
-      const int rbY = pvY + pvSz + sc(6);
-      renderer.drawRect(cpContX, rbY, sc(7), sc(7));
-      renderer.fillRect(cpContX + 2, rbY + 2, sc(3), sc(3));
-      renderer.drawText(SMALL_FONT_ID, cpContX + sc(9), rbY, "Black");
-      renderer.drawRect(cpContX, rbY + sc(10), sc(7), sc(7));
-      renderer.drawText(SMALL_FONT_ID, cpContX + sc(9), rbY + sc(10), "White");
-    }
-
+    // ── Book Finder window — the only thing drawn programmatically ────────────
     // Derive book title from open EPUB.
     std::string bookTitle;
     if (!APP_STATE.openEpubPath.empty()) {
@@ -1261,7 +1162,7 @@ void SleepActivity::renderSystem6SleepScreen() const {
     const int WIN_W = sc(145);
     const int WIN_H = sc(98);
     const int winX  = scrX + sc(2);
-    const int winY  = scrY + MB_H + sc(2);
+    const int winY  = scrY + sc(16);   // leave room for the image's menu bar
     const int SB    = sc(11);
     const int TB_H  = sc(11);
     mac6Frame(renderer, winX, winY, WIN_W, WIN_H);
@@ -1280,7 +1181,16 @@ void SleepActivity::renderSystem6SleepScreen() const {
     renderer.drawRect(zbX,     winY + sc(2), sc(9), sc(9), false);
     renderer.drawRect(zbX + 1, winY + sc(3), sc(7), sc(7), false);
 
-    // Window title (white on stripes, centred).
+    // Sync-pending indicator: small filled square inside the zoom box when
+    // unsynced, replacing the decorative inner rect so it stays within our
+    // bounds and is visible against the stripe background.
+    if (KoSyncStatus::isUnsynced()) {
+      const int dotSz = std::max(3, SB / 3);
+      renderer.fillRect(zbX + (SB - dotSz) / 2, winY + (TB_H - dotSz) / 2,
+                        dotSz, dotSz);  // black dot in zoom-box area
+    }
+
+    // Window title (white on stripes, centred between close box and zoom box).
     {
       char wtitle[40];
       const int titleAreaW = zbX - (winX + sc(12));
