@@ -989,10 +989,10 @@ void SleepActivity::renderSystem6SleepScreen() const {
   // Left/right bezel scales with width; top bezel and screen height with height.
   const int BEZ_LR  = sc(38);
   const int BEZ_TOP = sv(36);
-  const int SCR_W   = CASE_W - BEZ_LR * 2;
-  const int SCR_H   = sv(166);
-  const int scrX = caseX + BEZ_LR;
-  const int scrY = caseY + BEZ_TOP;
+  int SCR_W   = CASE_W - BEZ_LR * 2;
+  int SCR_H   = sv(166);
+  int scrX = caseX + BEZ_LR;
+  int scrY = caseY + BEZ_TOP;
 
   // Bottom section metrics.
   const int botY = scrY + SCR_H;                  // top of floppy/speaker zone
@@ -1008,6 +1008,7 @@ void SleepActivity::renderSystem6SleepScreen() const {
   // and naturally fills that region.  When the file is absent the programmatic
   // case is drawn instead.
   static constexpr char MAC_FRAME_BMP[] = "/mac-frame.bmp";
+  static constexpr char MAC_FRAME_CFG[] = "/mac-frame.cfg";
   const bool hasCustomFrame = [&]() -> bool {
     if (!Storage.exists(MAC_FRAME_BMP)) return false;
     HalFile f;
@@ -1015,6 +1016,28 @@ void SleepActivity::renderSystem6SleepScreen() const {
     Bitmap bmp(f);
     if (bmp.parseHeaders() != BmpReaderError::Ok) return false;
     renderer.drawBitmap(bmp, 0, 0, W, H, 0.0f, 0.0f);
+    // Optional viewport override: drop mac-frame.cfg alongside mac-frame.bmp
+    // with lines "vx=N", "vy=N", "vw=N", "vh=N" to relocate the desktop scene.
+    if (Storage.exists(MAC_FRAME_CFG)) {
+      HalFile cf;
+      if (Storage.openFileForRead("SLP", MAC_FRAME_CFG, cf)) {
+        char buf[128] = {};
+        const int nr = cf.read(reinterpret_cast<uint8_t*>(buf), sizeof(buf) - 1);
+        if (nr > 0) {
+          auto parseKey = [&buf](const char* key) -> int {
+            const char* p = strstr(buf, key);
+            if (!p) return -1;
+            p += strlen(key);
+            return (*p == '=') ? atoi(p + 1) : -1;
+          };
+          const int nx = parseKey("vx"), ny = parseKey("vy");
+          const int nw = parseKey("vw"), nh = parseKey("vh");
+          if (nx >= 0 && ny >= 0 && nw > 0 && nh > 0) {
+            scrX = nx; scrY = ny; SCR_W = nw; SCR_H = nh;
+          }
+        }
+      }
+    }
     return true;
   }();
 
