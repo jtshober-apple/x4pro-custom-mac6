@@ -1007,8 +1007,9 @@ void SleepActivity::renderSystem6SleepScreen() const {
   // screen viewport area left as solid white; the desktop scene renders on top
   // and naturally fills that region.  When the file is absent the programmatic
   // case is drawn instead.
-  static constexpr char MAC_FRAME_BMP[] = "/.mac-frame.bmp";
-  static constexpr char MAC_FRAME_CFG[] = "/.mac-frame.cfg";
+  static constexpr char MAC_FRAME_BMP[]        = "/.mac-frame.bmp";
+  static constexpr char MAC_FRAME_CFG_HIDDEN[] = "/.mac-frame.cfg";  // dot-prefix (hidden on macOS)
+  static constexpr char MAC_FRAME_CFG_PLAIN[]  = "/mac-frame.cfg";   // plain name (easier to create)
   const bool hasCustomFrame = [&]() -> bool {
     if (!Storage.exists(MAC_FRAME_BMP)) return false;
     HalFile f;
@@ -1016,12 +1017,17 @@ void SleepActivity::renderSystem6SleepScreen() const {
     Bitmap bmp(f);
     if (bmp.parseHeaders() != BmpReaderError::Ok) return false;
     renderer.drawBitmap(bmp, 0, 0, W, H, 0.0f, 0.0f);
-    // Optional viewport override: place .mac-frame.cfg on the SD card alongside
-    // .mac-frame.bmp with lines "vx=N", "vy=N", "vw=N", "vh=N" to relocate
-    // the desktop scene to match the photographed monitor's screen area.
+    // Optional viewport override + inversion: place mac-frame.cfg (or .mac-frame.cfg) on the SD
+    // card alongside .mac-frame.bmp with keys "vx=N", "vy=N", "vw=N", "vh=N" to relocate the
+    // desktop scene, and "inv=1" to invert the frame image colors (useful when a beige/tan case
+    // renders too dark on e-ink).  Both dot-prefix and plain filename are accepted so the file can
+    // be created without Terminal.
+    const char* cfgPath = Storage.exists(MAC_FRAME_CFG_HIDDEN) ? MAC_FRAME_CFG_HIDDEN
+                        : Storage.exists(MAC_FRAME_CFG_PLAIN)  ? MAC_FRAME_CFG_PLAIN
+                        : nullptr;
     char cfgBuf[128] = {};
-    if (Storage.readFileToBuffer(MAC_FRAME_CFG, cfgBuf, sizeof(cfgBuf)) > 0) {
-      LOG_DBG("SLP", "mac-frame.cfg: %s", cfgBuf);
+    if (cfgPath && Storage.readFileToBuffer(cfgPath, cfgBuf, sizeof(cfgBuf)) > 0) {
+      LOG_DBG("SLP", "mac-frame.cfg (%s): %s", cfgPath, cfgBuf);
       auto parseKey = [](const char* hay, const char* key) -> int {
         const char* p = strstr(hay, key);
         if (!p) return -1;
@@ -1030,13 +1036,23 @@ void SleepActivity::renderSystem6SleepScreen() const {
       };
       const int nx = parseKey(cfgBuf, "vx"), ny = parseKey(cfgBuf, "vy");
       const int nw = parseKey(cfgBuf, "vw"), nh = parseKey(cfgBuf, "vh");
-      LOG_DBG("SLP", "cfg parsed: vx=%d vy=%d vw=%d vh=%d", nx, ny, nw, nh);
+      const int ninv = parseKey(cfgBuf, "inv");
+      LOG_DBG("SLP", "cfg parsed: vx=%d vy=%d vw=%d vh=%d inv=%d", nx, ny, nw, nh, ninv);
       if (nx >= 0 && ny >= 0 && nw > 0 && nh > 0) {
         scrX = nx; scrY = ny; SCR_W = nw; SCR_H = nh;
         LOG_DBG("SLP", "viewport override applied: x=%d y=%d w=%d h=%d", scrX, scrY, SCR_W, SCR_H);
       } else {
         LOG_ERR("SLP", "mac-frame.cfg: missing or invalid keys (vx=%d vy=%d vw=%d vh=%d)", nx, ny, nw, nh);
       }
+      if (ninv == 1) {
+        // Invert the entire framebuffer to flip frame colors, then restore the
+        // viewport region to white so the desktop scene renders on a clean ground.
+        renderer.invertScreen();
+        renderer.fillRect(scrX, scrY, SCR_W, SCR_H, false);
+        LOG_DBG("SLP", "frame inverted; viewport restored to white");
+      }
+    } else {
+      LOG_INF("SLP", "no mac-frame.cfg found; using default viewport");
     }
     return true;
   }();
