@@ -1016,26 +1016,26 @@ void SleepActivity::renderSystem6SleepScreen() const {
     Bitmap bmp(f);
     if (bmp.parseHeaders() != BmpReaderError::Ok) return false;
     renderer.drawBitmap(bmp, 0, 0, W, H, 0.0f, 0.0f);
-    // Optional viewport override: drop mac-frame.cfg alongside mac-frame.bmp
-    // with lines "vx=N", "vy=N", "vw=N", "vh=N" to relocate the desktop scene.
-    if (Storage.exists(MAC_FRAME_CFG)) {
-      HalFile cf;
-      if (Storage.openFileForRead("SLP", MAC_FRAME_CFG, cf)) {
-        char buf[128] = {};
-        const int nr = cf.read(reinterpret_cast<uint8_t*>(buf), sizeof(buf) - 1);
-        if (nr > 0) {
-          auto parseKey = [&buf](const char* key) -> int {
-            const char* p = strstr(buf, key);
-            if (!p) return -1;
-            p += strlen(key);
-            return (*p == '=') ? atoi(p + 1) : -1;
-          };
-          const int nx = parseKey("vx"), ny = parseKey("vy");
-          const int nw = parseKey("vw"), nh = parseKey("vh");
-          if (nx >= 0 && ny >= 0 && nw > 0 && nh > 0) {
-            scrX = nx; scrY = ny; SCR_W = nw; SCR_H = nh;
-          }
-        }
+    // Optional viewport override: place .mac-frame.cfg on the SD card alongside
+    // .mac-frame.bmp with lines "vx=N", "vy=N", "vw=N", "vh=N" to relocate
+    // the desktop scene to match the photographed monitor's screen area.
+    char cfgBuf[128] = {};
+    if (Storage.readFileToBuffer(MAC_FRAME_CFG, cfgBuf, sizeof(cfgBuf)) > 0) {
+      LOG_DBG("SLP", "mac-frame.cfg: %s", cfgBuf);
+      auto parseKey = [](const char* hay, const char* key) -> int {
+        const char* p = strstr(hay, key);
+        if (!p) return -1;
+        p += strlen(key);
+        return (*p == '=') ? atoi(p + 1) : -1;
+      };
+      const int nx = parseKey(cfgBuf, "vx"), ny = parseKey(cfgBuf, "vy");
+      const int nw = parseKey(cfgBuf, "vw"), nh = parseKey(cfgBuf, "vh");
+      LOG_DBG("SLP", "cfg parsed: vx=%d vy=%d vw=%d vh=%d", nx, ny, nw, nh);
+      if (nx >= 0 && ny >= 0 && nw > 0 && nh > 0) {
+        scrX = nx; scrY = ny; SCR_W = nw; SCR_H = nh;
+        LOG_DBG("SLP", "viewport override applied: x=%d y=%d w=%d h=%d", scrX, scrY, SCR_W, SCR_H);
+      } else {
+        LOG_ERR("SLP", "mac-frame.cfg: missing or invalid keys (vx=%d vy=%d vw=%d vh=%d)", nx, ny, nw, nh);
       }
     }
     return true;
