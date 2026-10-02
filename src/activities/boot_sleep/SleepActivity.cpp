@@ -1107,17 +1107,21 @@ void SleepActivity::renderSystem6SleepScreen() const {
     renderer.fillRect(scrX, scrY, SCR_W, MB_H);
 
     // Menu bar text: apple icon + menus (white-on-black).
-    // If a KoSync upload is pending, append a small sync indicator at the right
-    // of the bar instead of the floating X that would overlay the frame.
     renderer.drawText(SMALL_FONT_ID, scrX + sc(3), scrY + sc(2),
                       " \xEF\xA3\xBF  File  Edit  View  Special", /*black=*/false);
+
+    // Static clock on the right side of the menu bar (authentic System 6 look).
+    // Omit if a KoSync sync-pending indicator is there instead.
     if (KoSyncStatus::isUnsynced()) {
-      // Draw a small sync-pending dot in the top-right corner of the menu bar.
-      // A filled square is more reliable than any Unicode arrow on the bitmap font.
       const int dotSize = sv(5);
       renderer.fillRect(scrX + SCR_W - dotSize - sc(3),
                         scrY + (MB_H - dotSize) / 2,
                         dotSize, dotSize, /*black=*/false);
+    } else {
+      const char* timeStr = "12:00 AM";
+      const int tw = renderer.getTextWidth(SMALL_FONT_ID, timeStr);
+      renderer.drawText(SMALL_FONT_ID, scrX + SCR_W - tw - sc(4), scrY + sc(2),
+                        timeStr, /*black=*/false);
     }
 
     // Desktop checkerboard below the menu bar.
@@ -1158,32 +1162,141 @@ void SleepActivity::renderSystem6SleepScreen() const {
     }
     if (bookTitle.empty()) bookTitle = "Documents";
 
-    const int WIN_W = sc(130);
-    const int WIN_H = sc(80);
+    const int WIN_W = sc(145);
+    const int WIN_H = sc(98);
     const int winX = scrX + sc(4);
     const int winY = scrY + MB_H + sc(4);
+    const int SB    = sc(11);   // scroll bar width (~18 px at 480-wide display)
     mac6Frame(renderer, winX, winY, WIN_W, WIN_H);
 
-    // Title bar (black) + close box.
+    // Title bar (solid black).
     const int TB_H = sc(11);
     renderer.fillRect(winX + 1, winY + 1, WIN_W - 2, TB_H);
-    renderer.drawRect(winX + 1, winY + sc(2), sc(9), sc(9), false);   // close box (white)
+
+    // Close box (double white rect, top-left of title bar).
+    renderer.drawRect(winX + 1,     winY + sc(2), sc(9), sc(9), false);
     renderer.drawRect(winX + sc(2), winY + sc(3), sc(7), sc(7), false);
 
-    // Window title (white on black, truncated).
-    char wtitle[40];
-    mac6TruncLabel(renderer, bookTitle.c_str(), WIN_W - 20, wtitle, sizeof(wtitle));
-    renderer.drawText(SMALL_FONT_ID, winX + 14, winY + 2, wtitle, /*black=*/false);
+    // Zoom box (top-right of title bar, mirrors close box placement).
+    const int zbX = winX + WIN_W - SB - 1;
+    renderer.drawRect(zbX,     winY + sc(2), sc(9), sc(9), false);
+    renderer.drawRect(zbX + 1, winY + sc(3), sc(7), sc(7), false);
 
-    // White interior.
-    renderer.fillRect(winX + 1, winY + TB_H + 1, WIN_W - 2, WIN_H - TB_H - 2, false);
+    // Window title (white on black, centred between close box and zoom box).
+    {
+      char wtitle[40];
+      const int titleAreaW = zbX - (winX + sc(12));
+      mac6TruncLabel(renderer, bookTitle.c_str(), titleAreaW, wtitle, sizeof(wtitle));
+      const int tw = renderer.getTextWidth(SMALL_FONT_ID, wtitle);
+      renderer.drawText(SMALL_FONT_ID,
+                        winX + sc(12) + std::max(0, (titleAreaW - tw) / 2),
+                        winY + 2, wtitle, /*black=*/false);
+    }
 
-    // File entry: doc icon + title.
-    const int fileY = winY + TB_H + sc(6);
-    mac6DocIcon(renderer, winX + sc(6), fileY);
-    char ftitle[40];
-    mac6TruncLabel(renderer, bookTitle.c_str(), WIN_W - sc(35), ftitle, sizeof(ftitle));
-    renderer.drawText(SMALL_FONT_ID, winX + sc(32), fileY + sc(4), ftitle);
+    // Content area (white fill, excluding scroll bar strips).
+    const int contW = WIN_W - SB - 2;
+    const int contH = WIN_H - TB_H - SB - 2;
+    renderer.fillRect(winX + 1, winY + TB_H + 1, contW, contH, false);
+
+    // Header separator row ("Name" column label, System 6 Finder convention).
+    const int HDR_H = sc(10);
+    const int hdrY  = winY + TB_H + 1;
+    renderer.fillRect(winX + 1, hdrY + HDR_H - 1, contW, 1);   // bottom rule
+    renderer.drawText(SMALL_FONT_ID, winX + sc(6), hdrY + 1, "Name");
+
+    // File entry: doc icon + title (below header).
+    const int fileY = hdrY + HDR_H + sc(3);
+    mac6DocIcon(renderer, winX + sc(4), fileY);
+    {
+      char ftitle[40];
+      mac6TruncLabel(renderer, bookTitle.c_str(), contW - sc(28), ftitle, sizeof(ftitle));
+      renderer.drawText(SMALL_FONT_ID, winX + sc(28), fileY + sc(4), ftitle);
+    }
+
+    // ── Right scroll bar ─────────────────────────────────────────────────────
+    const int rsbX    = winX + WIN_W - SB - 1;    // left edge of right scroll bar
+    const int rsbTopY = winY + TB_H + 1;
+    const int rsbBotY = winY + WIN_H - SB - 1;    // top of down-arrow button
+
+    // Up-arrow button.
+    renderer.drawRect(rsbX, rsbTopY, SB, SB);
+    renderer.fillRect(rsbX + 1, rsbTopY + 1, SB - 2, SB - 2, false);
+    {
+      const int cx = rsbX + SB / 2, ty = rsbTopY + 2;
+      renderer.fillRect(cx,     ty,     1, 1);
+      renderer.fillRect(cx - 1, ty + 1, 3, 1);
+      renderer.fillRect(cx - 2, ty + 2, 5, 1);
+      if (SB > 14) renderer.fillRect(cx - 3, ty + 3, 7, 1);
+    }
+
+    // Gray (checkerboard) track.
+    mac6Checkerboard(renderer, rsbX, rsbTopY + SB, SB, rsbBotY - (rsbTopY + SB));
+
+    // Thumb near top of track.
+    {
+      const int rTrackH = rsbBotY - (rsbTopY + SB);
+      const int thumbH  = std::max(SB, rTrackH / 4);
+      renderer.fillRect(rsbX + 1, rsbTopY + SB + 1, SB - 2, thumbH, false);
+      renderer.drawRect(rsbX + 1, rsbTopY + SB + 1, SB - 2, thumbH);
+    }
+
+    // Down-arrow button.
+    renderer.drawRect(rsbX, rsbBotY, SB, SB);
+    renderer.fillRect(rsbX + 1, rsbBotY + 1, SB - 2, SB - 2, false);
+    {
+      const int cx = rsbX + SB / 2, ty = rsbBotY + 2;
+      if (SB > 14) renderer.fillRect(cx - 3, ty,     7, 1);
+      renderer.fillRect(cx - 2, ty + (SB > 14 ? 1 : 0), 5, 1);
+      renderer.fillRect(cx - 1, ty + (SB > 14 ? 2 : 1), 3, 1);
+      renderer.fillRect(cx,     ty + (SB > 14 ? 3 : 2), 1, 1);
+    }
+
+    // ── Bottom scroll bar ────────────────────────────────────────────────────
+    const int bsbY      = winY + WIN_H - SB - 1;   // top of bottom scroll bar
+    const int bsbRightX = rsbX - SB;               // left of right-arrow button
+
+    // White bar fill.
+    renderer.fillRect(winX + 1, bsbY, contW - 1, SB, false);
+
+    // Left-arrow button.
+    renderer.drawRect(winX + 1, bsbY, SB, SB);
+    renderer.fillRect(winX + 2, bsbY + 1, SB - 2, SB - 2, false);
+    {
+      const int cy = bsbY + SB / 2, lx = winX + SB - 2;
+      renderer.fillRect(lx,     cy,     1, 1);
+      renderer.fillRect(lx - 1, cy - 1, 1, 3);
+      renderer.fillRect(lx - 2, cy - 2, 1, 5);
+      if (SB > 14) renderer.fillRect(lx - 3, cy - 3, 1, 7);
+    }
+
+    // Gray track.
+    {
+      const int bTrackLeft = winX + 1 + SB;
+      mac6Checkerboard(renderer, bTrackLeft, bsbY + 1, bsbRightX - bTrackLeft, SB - 2);
+
+      // Thumb near left of track.
+      const int bTrackW = bsbRightX - bTrackLeft;
+      const int bthumbW = std::max(SB, bTrackW / 4);
+      renderer.fillRect(bTrackLeft + 1, bsbY + 1, bthumbW, SB - 2, false);
+      renderer.drawRect(bTrackLeft + 1, bsbY + 1, bthumbW, SB - 2);
+    }
+
+    // Right-arrow button.
+    renderer.drawRect(bsbRightX, bsbY, SB, SB);
+    renderer.fillRect(bsbRightX + 1, bsbY + 1, SB - 2, SB - 2, false);
+    {
+      const int cy = bsbY + SB / 2, rx = bsbRightX + 2;
+      renderer.fillRect(rx,     cy,     1, 1);
+      renderer.fillRect(rx + 1, cy - 1, 1, 3);
+      renderer.fillRect(rx + 2, cy - 2, 1, 5);
+      if (SB > 14) renderer.fillRect(rx + 3, cy - 3, 1, 7);
+    }
+
+    // Size box (lower-right corner, overlapping-squares pattern).
+    renderer.fillRect(rsbX, bsbY, SB + 1, SB + 1, false);
+    renderer.drawRect(rsbX + 1, bsbY + 1, SB - 3, SB - 3);
+    renderer.fillRect(rsbX + 2, bsbY + 2, SB - 5, SB - 5, false);
+    renderer.drawRect(rsbX + 3, bsbY + 3, SB - 5, SB - 5);
 
     // ── Trash icon (bottom-right of desktop) ─────────────────────────────
     const int TR_W = sc(22), TR_H = sc(28);
