@@ -1007,8 +1007,8 @@ void SleepActivity::renderSystem6SleepScreen() const {
   // screen viewport area left as solid white; the desktop scene renders on top
   // and naturally fills that region.  When the file is absent the programmatic
   // case is drawn instead.
-  static constexpr char MAC_FRAME_BMP[] = "/mac-frame.bmp";
-  static constexpr char MAC_FRAME_CFG[] = "/mac-frame.cfg";
+  static constexpr char MAC_FRAME_BMP[] = "/.mac-frame.bmp";
+  static constexpr char MAC_FRAME_CFG[] = "/.mac-frame.cfg";
   const bool hasCustomFrame = [&]() -> bool {
     if (!Storage.exists(MAC_FRAME_BMP)) return false;
     HalFile f;
