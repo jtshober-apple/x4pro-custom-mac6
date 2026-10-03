@@ -1162,7 +1162,7 @@ void SleepActivity::renderSystem6SleepScreen() const {
     const int WIN_W = sc(145);
     const int WIN_H = sc(98);
     const int winX  = 42;
-    const int winY  = 242;
+    const int winY  = 241;
     const int SB    = sc(11);
     const int TB_H  = sc(11);
     mac6Frame(renderer, winX, winY, WIN_W, WIN_H);
