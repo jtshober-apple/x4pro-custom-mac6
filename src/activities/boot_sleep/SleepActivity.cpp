@@ -1121,16 +1121,22 @@ void SleepActivity::renderSystem6SleepScreen() const {
   // ── Step 3: System 6 desktop scene (no cover) ─────────────────────────────
   if (!hasCover) {
     // ── Desktop background ────────────────────────────────────────────────────
-    // Drop /.mac-desktop.bmp (SCR_W × SCR_H pixels, 1-bit BMP) on the SD card
-    // root to supply the full desktop image (menu bar, icons, windows — all of
-    // it).  When absent, a plain checkerboard fills the viewport as a fallback.
-    static constexpr char MAC_DESKTOP_BMP[] = "/.mac-desktop.bmp";
+    // Drop mac-desktop.bmp (480×800, 1-bit BMP) on the SD card root to supply
+    // the full desktop image (chassis frame, menu bar, icons — everything).
+    // When absent, a plain checkerboard fills the viewport as a fallback.
+    // Plain name (no dot prefix) so macOS Finder does not hide the file when
+    // the user copies it from the unzipped export to the SD card.
+    static constexpr char MAC_DESKTOP_BMP[] = "/mac-desktop.bmp";
     const bool hasDesktopImage = [&]() -> bool {
       if (!Storage.exists(MAC_DESKTOP_BMP)) return false;
       HalFile df;
       if (!Storage.openFileForRead("SLP", MAC_DESKTOP_BMP, df)) return false;
       Bitmap dbmp(df);
-      if (dbmp.parseHeaders() != BmpReaderError::Ok) return false;
+      const BmpReaderError parseResult = dbmp.parseHeaders();
+      if (parseResult != BmpReaderError::Ok) {
+        LOG_ERR("SLP", "mac-desktop.bmp parse error: %s", Bitmap::errorToString(parseResult));
+        return false;
+      }
       renderer.drawBitmap(dbmp, 0, 0, W, H, 0.0f, 0.0f);
       return true;
     }();
