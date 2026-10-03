@@ -1131,7 +1131,7 @@ void SleepActivity::renderSystem6SleepScreen() const {
       if (!Storage.openFileForRead("SLP", MAC_DESKTOP_BMP, df)) return false;
       Bitmap dbmp(df);
       if (dbmp.parseHeaders() != BmpReaderError::Ok) return false;
-      renderer.drawBitmap(dbmp, scrX, scrY, SCR_W, SCR_H, 0.0f, 0.0f);
+      renderer.drawBitmap(dbmp, 0, 0, W, H, 0.0f, 0.0f);
       return true;
     }();
     if (!hasDesktopImage)
@@ -1161,8 +1161,8 @@ void SleepActivity::renderSystem6SleepScreen() const {
 
     const int WIN_W = sc(145);
     const int WIN_H = sc(98);
-    const int winX  = scrX + sc(2);
-    const int winY  = scrY + sc(16);   // leave room for the image's menu bar
+    const int winX  = 42;
+    const int winY  = 242;
     const int SB    = sc(11);
     const int TB_H  = sc(11);
     mac6Frame(renderer, winX, winY, WIN_W, WIN_H);
