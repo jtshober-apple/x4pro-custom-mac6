@@ -23,4 +23,9 @@ class MetadataOverride {
 
   // Returns the path where the converted cover BMP should be stored.
   static std::string getCoverBmpPath(const std::string& epubPath);
+
+  // Returns true if a metadata override has already been saved for this epub.
+  // Fast SD check; used by the system-wide "auto-lookup on open" logic in
+  // Activity::onSelectBook() so already-fetched books skip the network call.
+  static bool hasOverride(const std::string& epubPath);
 };

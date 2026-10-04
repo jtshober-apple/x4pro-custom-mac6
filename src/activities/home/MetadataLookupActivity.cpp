@@ -130,7 +130,7 @@ void MetadataLookupActivity::doWork() {
   const std::string cachePath = MetadataOverride::getCachePath(epubPath_);
   std::string thumbPath;
 
-  if (result.coverId > 0) {
+  if (!result.coverUrl.empty()) {
     const std::string jpegTmp = cachePath + "/cover_tmp.jpg";
 
     // Match the dimensions the home screen will request.
@@ -141,7 +141,7 @@ void MetadataLookupActivity::doWork() {
 
     Storage.ensureDirectoryExists(cachePath.c_str());
 
-    if (OpenLibraryClient::downloadCoverJpeg(result.coverId, jpegTmp)) {
+    if (OpenLibraryClient::downloadCoverJpeg(result.coverUrl, jpegTmp)) {
       HalFile jpegFile, bmpFile;
       if (Storage.openFileForRead(TAG, jpegTmp, jpegFile) &&
           Storage.openFileForWrite(TAG, thumbBmp, bmpFile)) {

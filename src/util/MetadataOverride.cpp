@@ -70,3 +70,8 @@ bool MetadataOverride::load(const std::string& epubPath, std::string& title, std
 
   return !title.empty();
 }
+
+bool MetadataOverride::hasOverride(const std::string& epubPath) {
+  const std::string overridePath = getCachePath(epubPath) + "/meta_override.txt";
+  return Storage.exists(overridePath.c_str());
+}

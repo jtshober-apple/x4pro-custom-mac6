@@ -189,30 +189,17 @@ void EpubReaderActivity::onEnter() {
   skipOpenSyncBookPath.clear();
   if (!epub) return;  // Load failed; ReaderActivity::onEnter() already called finish().
 
-  // Automatic KOReader-sync push, hook 1 of 4 (see also attemptCloseAutoSync()
-  // below and the sleep/screen-timeout hook in ActivityManager::goToSleep):
-  // schedule a silent push a few seconds after opening, so a quick open-and-
-  // back-out doesn't cost a network round trip.
-  if (skipOpenSync) {
-    // Just reopened at the server's own position: already reconciled, so no
-    // second sync. Later close/sleep pushes can go straight out.
-    openAutoSyncPending = false;
-    openAutoSyncAttempted = true;
-    openAutoSyncOk = true;
-    return;
-  }
-  openAutoSyncPending = true;
-  openAutoSyncAttempted = false;
+  // Auto-sync disabled on this branch. Manual sync via KOReaderSyncActivity
+  // (reader toolbar menu) remains fully functional; the X badge still tracks
+  // whether the book has ever been synced via that path.
+  (void)skipOpenSync;
+  openAutoSyncPending = false;
+  openAutoSyncAttempted = true;  // suppress the loop() trigger
   openAutoSyncOk = false;
-  openAutoSyncFireAtMs = millis() + OPEN_AUTO_SYNC_DELAY_MS;
 }
 
 void EpubReaderActivity::onGoHome(HomeMenuItem item) {
-  // Hook 2 of 4 (book close): runs here -- before onGoHome hands off to
-  // ActivityManager::goHome()/replaceActivity(), i.e. before the RenderLock
-  // that would later wrap onExit() is ever taken. epub/section are still
-  // fully valid at this point (they're torn down later, in the destructor).
-  attemptCloseAutoSync();
+  // Auto-sync disabled; just hand off directly.
   Activity::onGoHome(item);
 }
 
@@ -399,10 +386,7 @@ void EpubReaderActivity::attemptCloseAutoSync() {
 }
 
 void EpubReaderActivity::attemptAutoSyncBeforeSleep() {
-  // Hooks 3 & 4 of 4 (manual sleep and auto-sleep-from-timeout land here via
-  // ActivityManager::goToSleep -- same "please wait" + toast treatment as
-  // the close hook, since the CPU has to stay up for it either way).
-  attemptCloseAutoSync();
+  // Auto-sync disabled on this branch; no-op.
 }
 
 bool EpubReaderActivity::loadBook() {
